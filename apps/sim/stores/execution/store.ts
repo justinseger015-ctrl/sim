@@ -58,10 +58,11 @@ export const useExecutionStore = create<ExecutionState & ExecutionActions>()((se
     }
   },
   setIsDebugging: (isDebugging) => set({ isDebugging }),
-  setExecutionIdentifiers: ({ executionId, workflowId }) =>
+  setExecutionIdentifiers: ({ executionId, workflowId, isResuming }) =>
     set((state) => ({
       executionId: executionId ?? state.executionId,
       workflowId: workflowId ?? state.workflowId,
+      isResuming: isResuming ?? state.isResuming,
     })),
   setExecutor: (executor) => set({ executor }),
   setDebugContext: (debugContext) => set({ debugContext }),

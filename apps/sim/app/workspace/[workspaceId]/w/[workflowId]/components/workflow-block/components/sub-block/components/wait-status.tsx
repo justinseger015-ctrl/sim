@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createLogger } from '@/lib/logs/console/logger'
 import { useExecutionStore } from '@/stores/execution/store'
+import { useConsoleStore } from '@/stores/panel/console/store'
 
 const logger = createLogger('WaitStatus')
 
@@ -17,10 +18,12 @@ interface PausedExecutionInfo {
 }
 
 export function WaitStatus({ blockId, isPreview, disabled }: WaitStatusProps) {
-  const { executionId, workflowId, isExecuting } = useExecutionStore((state) => state)
+  const { executionId, workflowId, isExecuting, setIsExecuting, setActiveBlocks, setExecutionIdentifiers } = useExecutionStore((state) => state)
+  const { addConsole, toggleConsole } = useConsoleStore()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pausedInfo, setPausedInfo] = useState<PausedExecutionInfo | null>(null)
+  const [isResuming, setIsResuming] = useState(false)
   
   logger.info('WaitStatus render', { blockId, executionId, workflowId, isPreview, isExecuting, disabled })
 
@@ -46,25 +49,51 @@ export function WaitStatus({ blockId, isPreview, disabled }: WaitStatusProps) {
         pausedExecutions?: PausedExecutionInfo[]
       }
 
+      const pausedExecutions = data.pausedExecutions || []
+
       logger.info('Paused executions response', {
-        count: data.pausedExecutions?.length || 0,
-        executionIds: data.pausedExecutions?.map(e => e.executionId),
+        count: pausedExecutions.length,
+        executionIds: pausedExecutions.map((e: any) => e.executionId),
       })
 
-      // First try exact match, then try any execution for this workflow
-      let currentExecution = data.pausedExecutions?.find(
-        (execution) => execution.executionId === executionId
-      )
-      
-      // If no exact match, check if we have any paused execution for this workflow
-      if (!currentExecution && data.pausedExecutions?.length > 0) {
-        logger.info('No exact executionId match, checking recent executions')
-        currentExecution = data.pausedExecutions[0] // Get most recent
+      const matchingExecutions = pausedExecutions.filter((pausedExecution) => {
+        const waitInfo =
+          (pausedExecution.metadata as { waitBlockInfo?: { blockId?: string } } | undefined)
+            ?.waitBlockInfo
+        return waitInfo?.blockId === blockId
+      })
+
+      let currentExecution: PausedExecutionInfo | undefined
+
+      if (executionId) {
+        currentExecution = matchingExecutions.find(
+          (execution) => execution.executionId === executionId
+        )
       }
 
-      const metadata = currentExecution?.metadata
-      const waitInfo = (metadata as { waitBlockInfo?: any } | undefined)?.waitBlockInfo
-      
+      if (!currentExecution) {
+        currentExecution = matchingExecutions[0]
+
+        if (currentExecution) {
+          logger.info('Falling back to most recent matching paused execution for block', {
+            executionId: currentExecution.executionId,
+            blockId,
+          })
+        }
+      }
+
+      if (!currentExecution) {
+        logger.info('No paused executions found for this block', {
+          blockId,
+          executionId,
+        })
+        setPausedInfo(null)
+        return
+      }
+
+      const metadata = currentExecution.metadata as { waitBlockInfo?: any } | undefined
+      const waitInfo = metadata?.waitBlockInfo
+
       logger.info('Wait info check', {
         hasCurrentExecution: !!currentExecution,
         waitInfo,
@@ -72,11 +101,15 @@ export function WaitStatus({ blockId, isPreview, disabled }: WaitStatusProps) {
         waitBlockId: waitInfo?.blockId,
         matches: waitInfo?.blockId === blockId,
       })
-      
-      if (waitInfo && waitInfo.blockId === blockId) {
-        setPausedInfo(currentExecution || null)
-      } else {
-        setPausedInfo(null)
+
+      setPausedInfo(currentExecution)
+
+      if (currentExecution.executionId !== executionId) {
+        setExecutionIdentifiers({
+          executionId: currentExecution.executionId,
+          workflowId,
+          isResuming: false,
+        })
       }
     } catch (err: any) {
       logger.error('Error fetching paused execution info', err)
@@ -84,19 +117,53 @@ export function WaitStatus({ blockId, isPreview, disabled }: WaitStatusProps) {
     } finally {
       setIsLoading(false)
     }
-  }, [workflowId, executionId, blockId, isPreview])
+  }, [workflowId, executionId, blockId, isPreview, setExecutionIdentifiers])
 
   const handleResume = useCallback(async () => {
-    if (!canInteract) return
-    logger.info('Resume clicked', { workflowId, executionId })
+    if (!canInteract || !pausedInfo?.executionId) {
+      logger.warn('Resume attempted without paused execution info', {
+        canInteract,
+        hasPausedInfo: !!pausedInfo,
+      })
+      return
+    }
+
+    // Use the executionId from pausedInfo, not from store
+    const resumeExecutionId = pausedInfo.executionId
+    
+    logger.info('Resume clicked', { 
+      workflowId, 
+      storeExecutionId: executionId,
+      pausedExecutionId: resumeExecutionId,
+      usingExecutionId: resumeExecutionId 
+    })
+    
     try {
       setIsLoading(true)
+      setIsResuming(true)
       setError(null)
 
+      // Update the execution ID in the store
+      setExecutionIdentifiers({ executionId: resumeExecutionId, workflowId, isResuming: true })
+      
+      // Mark as executing in the UI and open console
+      setIsExecuting(true)
+      setActiveBlocks(new Set([blockId]))
+      toggleConsole()
+
+      logger.info('Calling resume API', { 
+        url: `/api/workflows/${workflowId}/executions/resume/${resumeExecutionId}`,
+        workflowId,
+        executionId: resumeExecutionId 
+      })
+      
       const response = await fetch(
-        `/api/workflows/${workflowId}/executions/resume/${executionId}`,
+        `/api/workflows/${workflowId}/executions/resume/${resumeExecutionId}`,
         {
           method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
         }
       )
 
@@ -108,7 +175,86 @@ export function WaitStatus({ blockId, isPreview, disabled }: WaitStatusProps) {
       const data = await response.json()
       logger.info('Resume response', data)
 
+      // First add a resume started log
+      addConsole({
+        input: { action: 'resume', blockId },
+        output: { message: 'Resuming workflow execution from Wait block' },
+        success: true,
+        durationMs: 0,
+        startedAt: new Date().toISOString(),
+        endedAt: new Date().toISOString(),
+        workflowId: workflowId!,
+        blockId: blockId,
+        executionId: resumeExecutionId,
+        blockName: 'Wait',
+        blockType: 'wait',
+      })
+
+      // Add console logs for all executed blocks
+      if (data.logs && Array.isArray(data.logs)) {
+        data.logs.forEach((log: any) => {
+          addConsole({
+            input: log.input || {},
+            output: log.output || {},
+            success: log.success !== false,
+            error: log.error,
+            durationMs: log.durationMs || 0,
+            startedAt: log.startedAt || new Date().toISOString(),
+            endedAt: log.endedAt || new Date().toISOString(),
+            workflowId: workflowId!,
+            blockId: log.blockId,
+            executionId: resumeExecutionId,
+            blockName: log.blockName || 'Block',
+            blockType: log.blockType || 'unknown',
+          })
+        })
+      }
+
+      // Add final status log
+      const statusMessage = data.isPaused 
+        ? 'Workflow paused again at another Wait block' 
+        : data.success 
+          ? 'Workflow execution completed successfully' 
+          : `Workflow execution failed: ${data.error || 'Unknown error'}`
+      
+      addConsole({
+        input: { action: 'resume_complete' },
+        output: {
+          message: statusMessage,
+          finalOutput: data.output,
+          isPaused: data.isPaused,
+          duration: data.metadata?.duration,
+        },
+        success: data.success && !data.error,
+        error: data.error,
+        durationMs: data.metadata?.duration || 0,
+        startedAt: data.metadata?.startTime || new Date().toISOString(),
+        endedAt: data.metadata?.endTime || new Date().toISOString(),
+        workflowId: workflowId!,
+        blockId: blockId,
+        executionId: resumeExecutionId,
+        blockName: 'Wait',
+        blockType: 'wait',
+      })
+
+      // Update execution state based on result
+      if (data.isPaused) {
+        // Still paused (hit another wait block)
+        logger.info('Workflow still paused after resume', { waitBlockInfo: data.metadata?.waitBlockInfo })
+        setIsExecuting(false)
+        setActiveBlocks(new Set())
+        setExecutionIdentifiers({ executionId: resumeExecutionId, workflowId, isResuming: false })
+      } else {
+        // Execution completed
+        logger.info('Workflow completed after resume')
+        setIsExecuting(false)
+        setActiveBlocks(new Set())
+        setExecutionIdentifiers({ executionId: null, workflowId, isResuming: false })
+      }
+
       setPausedInfo(null)
+      setIsResuming(false)
+      
       // Add a small delay before refetching
       setTimeout(() => {
         fetchPausedInfo()
@@ -116,10 +262,25 @@ export function WaitStatus({ blockId, isPreview, disabled }: WaitStatusProps) {
     } catch (err: any) {
       logger.error('Error resuming execution', err)
       setError(err.message || 'Failed to resume execution')
+      setIsExecuting(false)
+      setActiveBlocks(new Set())
+      setIsResuming(false)
+      setExecutionIdentifiers({ executionId: resumeExecutionId, workflowId, isResuming: false })
     } finally {
       setIsLoading(false)
     }
-  }, [canInteract, workflowId, executionId, fetchPausedInfo])
+  }, [
+    canInteract,
+    pausedInfo,
+    workflowId,
+    blockId,
+    fetchPausedInfo,
+    setIsExecuting,
+    setActiveBlocks,
+    setExecutionIdentifiers,
+    addConsole,
+    toggleConsole,
+  ])
 
   useEffect(() => {
     fetchPausedInfo()
@@ -132,20 +293,24 @@ export function WaitStatus({ blockId, isPreview, disabled }: WaitStatusProps) {
       // Add a small delay to ensure database write completes
       const timer = setTimeout(() => {
         fetchPausedInfo()
-      }, 1000) // Increased to 1 second
+      }, 200) // Reduced to 200ms for faster response
       return () => clearTimeout(timer)
     }
   }, [executionId, isPreview, fetchPausedInfo])
   
-  // Poll for paused info while executing
+  // Poll for paused info while executing or when we have an executionId
   useEffect(() => {
-    if (isExecuting && !isPreview && workflowId) {
+    if (!isPreview && workflowId && (isExecuting || executionId)) {
+      // Initial fetch
+      fetchPausedInfo()
+      
+      // Then poll
       const interval = setInterval(() => {
         fetchPausedInfo()
       }, 1000) // Poll every second
       return () => clearInterval(interval)
     }
-  }, [isExecuting, isPreview, workflowId, fetchPausedInfo])
+  }, [isExecuting, executionId, isPreview, workflowId, fetchPausedInfo])
 
   if (isPreview) {
     return (
@@ -159,7 +324,14 @@ export function WaitStatus({ blockId, isPreview, disabled }: WaitStatusProps) {
 
   return (
     <div className="space-y-2">
-      {pausedInfo ? (
+      {isResuming ? (
+        <div className="rounded border p-3 text-sm">
+          <div className="flex items-center gap-2">
+            <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+            <span className="font-medium">Resuming workflow execution...</span>
+          </div>
+        </div>
+      ) : pausedInfo ? (
         <div className="rounded border p-3 text-sm">
           <div className="font-medium text-foreground mb-1">Workflow paused</div>
           <div className="text-muted-foreground">

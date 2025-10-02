@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { pauseResumeService } from '@/lib/execution/pause-resume-service'
-import { serializeWorkflowState } from '@/lib/execution/pause-resume-utils'
 import type { ExecutionContext } from '@/executor/types'
 import type { SerializedWorkflow } from '@/serializer/types'
 
@@ -68,6 +67,7 @@ export async function POST(
         executionId: pausedExecution.executionId,
         workflowId: pausedExecution.workflowId,
         pausedAt: pausedExecution.pausedAt.toISOString(),
+        metadata: pausedExecution.metadata,
       },
     })
   } catch (error: any) {

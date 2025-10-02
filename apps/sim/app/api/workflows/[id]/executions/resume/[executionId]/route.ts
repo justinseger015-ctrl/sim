@@ -6,6 +6,8 @@ import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { pauseResumeService } from '@/lib/execution/pause-resume-service'
 import { Executor } from '@/executor'
+import type { ExecutionContext } from '@/executor/types'
+import type { SerializedWorkflow } from '@/serializer/types'
 import { getUserEntityPermissions } from '@/lib/permissions'
 
 const logger = createLogger('ResumeExecutionAPI')
@@ -75,7 +77,7 @@ export async function POST(
       {
         executionId: executionId,
         workspaceId: workflowData.workspaceId,
-        isDeployedContext: resumeData.metadata.isDeployedContext || false,
+        isDeployedContext: resumeData.metadata?.isDeployedContext || false,
       }
     )
 
@@ -84,9 +86,48 @@ export async function POST(
 
     // Check if execution completed or was paused/cancelled again
     const metadata = result.metadata as any
+    const { context: resumedContext, ...metadataWithoutContext } = metadata || {}
     const isPaused = metadata?.isPaused
     const waitBlockInfo = metadata?.waitBlockInfo
     const isCancelled = !result.success && result.error?.includes('cancelled')
+
+    if (isPaused) {
+      if (!resumedContext) {
+        logger.warn('Resume result indicated paused but no context provided', {
+          executionId,
+          workflowId,
+        })
+      } else {
+        try {
+          const executionContext = resumedContext as ExecutionContext
+          const workflowState: SerializedWorkflow =
+            (executionContext.workflow as SerializedWorkflow) || resumeData.workflowState
+          const environmentVariables =
+            executionContext.environmentVariables || resumeData.environmentVariables || {}
+          const pauseMetadata = {
+            ...(resumeData.metadata || {}),
+            ...metadataWithoutContext,
+            waitBlockInfo,
+          }
+
+          await pauseResumeService.pauseExecution({
+            workflowId,
+            executionId,
+            userId: session.user.id,
+            executionContext,
+            workflowState,
+            environmentVariables,
+            workflowInput: resumeData.workflowInput,
+            metadata: pauseMetadata,
+          })
+        } catch (persistError: any) {
+          logger.error('Failed to persist paused execution after resume', {
+            executionId,
+            error: persistError,
+          })
+        }
+      }
+    }
 
     return NextResponse.json({
       success: result.success,
@@ -94,10 +135,13 @@ export async function POST(
       error: result.error,
       isPaused,
       isCancelled,
+      logs: result.logs || [],
       metadata: {
         duration: result.metadata?.duration,
         executedBlockCount: context.executedBlocks.size,
         waitBlockInfo,
+        startTime: result.metadata?.startTime,
+        endTime: result.metadata?.endTime,
       },
     })
   } catch (error: any) {

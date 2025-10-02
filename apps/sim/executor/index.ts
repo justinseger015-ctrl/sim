@@ -327,6 +327,7 @@ export class Executor {
         setExecutionIdentifiers({
           executionId: this.contextExtensions.executionId,
           workflowId,
+          isResuming: true,
         })
       }
 
@@ -525,7 +526,6 @@ export class Executor {
       return {
         success: false,
         output: finalOutput,
-        error: this.extractErrorMessage(error),
         metadata: {
           duration: Date.now() - new Date(context.metadata.startTime!).getTime(),
           startTime: context.metadata.startTime!,
@@ -534,11 +534,14 @@ export class Executor {
             target: conn.target,
           })),
         },
+        error: error instanceof Error ? error.message : String(error),
         logs: context.blockLogs,
       }
     } finally {
-      if (!this.isChildExecution && !this.isDebugging) {
-        reset()
+      if (!this.isChildExecution) {
+        setPendingBlocks([])
+        setExecutionIdentifiers({ executionId: null, isResuming: false })
+        setIsExecuting(false)
       }
     }
   }
