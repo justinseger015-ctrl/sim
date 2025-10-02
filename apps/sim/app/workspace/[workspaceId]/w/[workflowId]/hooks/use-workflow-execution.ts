@@ -6,7 +6,12 @@ import { processStreamingBlockLogs } from '@/lib/tokenization'
 import { TriggerUtils } from '@/lib/workflows/triggers'
 import type { BlockOutput } from '@/blocks/types'
 import { Executor } from '@/executor'
-import type { BlockLog, ExecutionResult, StreamingExecution } from '@/executor/types'
+import type {
+  BlockLog,
+  ExecutionContext,
+  ExecutionResult,
+  StreamingExecution,
+} from '@/executor/types'
 import { Serializer, WorkflowValidationError } from '@/serializer'
 import type { SerializedWorkflow } from '@/serializer/types'
 import { useExecutionStore } from '@/stores/execution/store'
@@ -18,6 +23,7 @@ import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { mergeSubblockState } from '@/stores/workflows/utils'
 import { generateLoopBlocks, generateParallelBlocks } from '@/stores/workflows/workflow/utils'
 import { useCurrentWorkflow } from './use-current-workflow'
+import { serializeExecutionContext } from '@/lib/execution/pause-resume-utils'
 
 const logger = createLogger('useWorkflowExecution')
 
@@ -114,6 +120,7 @@ export function useWorkflowExecution() {
     setExecutor,
     setDebugContext,
     setActiveBlocks,
+    setExecutionIdentifiers,
   } = useExecutionStore()
   const [executionResult, setExecutionResult] = useState<ExecutionResult | null>(null)
 
@@ -295,6 +302,60 @@ export function useWorkflowExecution() {
     }
   }
 
+  const persistPause = async (
+    executionId: string,
+    context: ExecutionContext | undefined,
+    workflow: SerializedWorkflow | undefined,
+    environmentVariables: Record<string, string> | undefined,
+    input: any,
+    metadata?: Record<string, any>
+  ) => {
+    if (!activeWorkflowId || !executionId) return
+    if (!context) {
+      logger.warn('Pause requested but execution context missing')
+      return
+    }
+
+    try {
+      const serializedContext = serializeExecutionContext(context)
+
+      logger.info('Persisting paused execution', {
+        executionId,
+        activeWorkflowId,
+        hasContext: !!context,
+        hasWorkflow: !!workflow,
+      })
+
+      const response = await fetch(
+        `/api/workflows/${activeWorkflowId}/executions/pause`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            executionId,
+            executionContext: serializedContext,
+            workflowState: workflow || (context.workflow as SerializedWorkflow),
+            environmentVariables:
+              environmentVariables || context.environmentVariables || {},
+            workflowInput: input,
+            metadata,
+          }),
+        }
+      )
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(errorText || 'Failed to persist paused execution')
+      }
+
+      logger.info('Successfully persisted paused execution', { executionId })
+    } catch (error) {
+      logger.error('Failed to persist paused execution', error)
+    }
+  }
+
   const handleRunWorkflow = useCallback(
     async (workflowInput?: any, enableDebug = false) => {
       if (!activeWorkflowId) return
@@ -326,6 +387,7 @@ export function useWorkflowExecution() {
           async start(controller) {
             const { encodeSSE } = await import('@/lib/utils')
             const executionId = uuidv4()
+            setExecutionIdentifiers({ executionId, workflowId: activeWorkflowId })
             const streamedContent = new Map<string, string>()
             const streamReadingPromises: Promise<void>[] = []
 
@@ -524,7 +586,6 @@ export function useWorkflowExecution() {
                       // For console display, show the actual structured block output instead of formatted streaming content
                       // This ensures console logs match the block state structure
                       // Use replaceOutput to completely replace the output instead of merging
-                      // Use the executionId from this execution context
                       useConsoleStore.getState().updateConsole(
                         log.blockId,
                         {
@@ -546,6 +607,8 @@ export function useWorkflowExecution() {
                 persistLogs(executionId, result).catch((err) =>
                   logger.error('Error persisting logs:', err)
                 )
+
+                // Pause persistence is handled in executeWorkflow
               }
             } catch (error: any) {
               // Create a proper error result for logging
@@ -576,6 +639,7 @@ export function useWorkflowExecution() {
               setIsExecuting(false)
               setIsDebugging(false)
               setActiveBlocks(new Set())
+              setExecutionIdentifiers({ executionId: null })
             }
           },
         })
@@ -584,6 +648,7 @@ export function useWorkflowExecution() {
 
       // For manual (non-chat) execution
       const executionId = uuidv4()
+      setExecutionIdentifiers({ executionId, workflowId: activeWorkflowId })
       try {
         const result = await executeWorkflow(workflowInput, undefined, executionId)
         if (result && 'metadata' in result && result.metadata?.isDebugSession) {
@@ -593,17 +658,28 @@ export function useWorkflowExecution() {
           }
         } else if (result && 'success' in result) {
           setExecutionResult(result)
-          if (!isDebugModeEnabled) {
-            setIsExecuting(false)
-            setIsDebugging(false)
-            setActiveBlocks(new Set())
-          }
 
-          if (isChatExecution) {
-            if (!result.metadata) {
-              result.metadata = { duration: 0, startTime: new Date().toISOString() }
+          if ((result.metadata as any)?.isPaused) {
+            // Pause persistence is handled in executeWorkflow
+            // Keep debugging state if paused, but mark execution inactive to allow resume button UI
+            setIsExecuting(false)
+            setActiveBlocks(new Set())
+            // DO NOT clear executionId when paused - we need it for the resume UI
+            logger.info('Workflow paused, keeping executionId active', { executionId })
+          } else {
+            if (!isDebugModeEnabled) {
+              setIsExecuting(false)
+              setIsDebugging(false)
+              setActiveBlocks(new Set())
+              setExecutionIdentifiers({ executionId: null })
             }
-            ;(result.metadata as any).source = 'chat'
+
+            if (isChatExecution) {
+              if (!result.metadata) {
+                result.metadata = { duration: 0, startTime: new Date().toISOString() }
+              }
+              ;(result.metadata as any).source = 'chat'
+            }
           }
 
           persistLogs(executionId, result).catch((err) => {
@@ -616,6 +692,7 @@ export function useWorkflowExecution() {
         persistLogs(executionId, errorResult).catch((err) => {
           logger.error('Error persisting logs:', { error: err })
         })
+        setExecutionIdentifiers({ executionId: null })
         return errorResult
       }
     },
@@ -961,7 +1038,27 @@ export function useWorkflowExecution() {
     setExecutor(newExecutor)
 
     // Execute workflow with the determined start block
-    return newExecutor.execute(activeWorkflowId || '', startBlockId)
+    const result = await newExecutor.execute(activeWorkflowId || '', startBlockId)
+
+    // Check if execution was paused and persist the state
+    if ((result as any)?.metadata?.isPaused && (result as any)?.metadata?.context) {
+      logger.info('Workflow paused, persisting state', {
+        executionId,
+        waitBlockInfo: (result as any).metadata?.waitBlockInfo,
+      })
+      await persistPause(
+        executionId!,
+        (result as any).metadata.context,
+        workflow,
+        envVarValues,
+        finalWorkflowInput,
+        {
+          waitBlockInfo: (result as any).metadata?.waitBlockInfo,
+        }
+      )
+    }
+
+    return result
   }
 
   const handleExecutionError = (error: unknown, options?: { executionId?: string }) => {

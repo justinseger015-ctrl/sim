@@ -201,6 +201,29 @@ export class Serializer {
       }
     }
 
+    // Special handling for Wait blocks (infrastructure block with custom handler)
+    if (block.type === 'wait') {
+      const params = this.extractParams(block)
+      return {
+        id: block.id,
+        position: block.position,
+        config: {
+          tool: '', // Wait blocks don't use tools
+          params, // Include all wait configuration
+        },
+        inputs: {},
+        outputs: {},
+        metadata: {
+          id: 'wait',
+          name: block.name,
+          description: 'Pause workflow execution',
+          category: 'blocks',
+          color: '#F59E0B',
+        },
+        enabled: block.enabled,
+      }
+    }
+
     const blockConfig = getBlock(block.type)
     if (!blockConfig) {
       throw new Error(`Invalid block type: ${block.type}`)
@@ -391,7 +414,11 @@ export class Serializer {
         shouldIncludeField(subBlockConfig, isAdvancedMode)
       ) {
         // If the value is absent and there's a default value function, use it
-        params[id] = subBlockConfig.value(params)
+        if (typeof subBlockConfig.value === 'function') {
+          params[id] = subBlockConfig.value(params)
+        } else {
+          params[id] = subBlockConfig.value
+        }
       }
     })
 

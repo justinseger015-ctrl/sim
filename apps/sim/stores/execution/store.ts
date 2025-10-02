@@ -58,6 +58,11 @@ export const useExecutionStore = create<ExecutionState & ExecutionActions>()((se
     }
   },
   setIsDebugging: (isDebugging) => set({ isDebugging }),
+  setExecutionIdentifiers: ({ executionId, workflowId }) =>
+    set((state) => ({
+      executionId: executionId ?? state.executionId,
+      workflowId: workflowId ?? state.workflowId,
+    })),
   setExecutor: (executor) => set({ executor }),
   setDebugContext: (debugContext) => set({ debugContext }),
   setAutoPanDisabled: (disabled) => set({ autoPanDisabled: disabled }),

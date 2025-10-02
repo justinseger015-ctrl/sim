@@ -83,6 +83,7 @@ export interface ExecutionMetadata {
   duration: number // Duration of workflow execution in milliseconds
   pendingBlocks?: string[] // List of block IDs that are pending execution
   isDebugSession?: boolean // Whether the workflow is running in debug mode
+  isPaused?: boolean // Whether the workflow execution is paused
   context?: ExecutionContext // Runtime context for the workflow
   workflowConnections?: Array<{ source: string; target: string }> // Connections between workflow blocks
 }

@@ -16,6 +16,7 @@ import {
   ResponseBlockHandler,
   RouterBlockHandler,
   TriggerBlockHandler,
+  WaitBlockHandler,
   WorkflowBlockHandler,
 } from '@/executor/handlers'
 import { LoopManager } from '@/executor/loops/loops'
@@ -83,6 +84,7 @@ export class Executor {
   private contextExtensions: any = {}
   private actualWorkflow: SerializedWorkflow
   private isCancelled = false
+  private isPaused = false
   private isChildExecution = false
 
   /**
@@ -204,6 +206,7 @@ export class Executor {
 
     this.blockHandlers = [
       new TriggerBlockHandler(),
+      new WaitBlockHandler(),
       new AgentBlockHandler(),
       new RouterBlockHandler(this.pathTracker),
       new ConditionBlockHandler(this.pathTracker, this.resolver),
@@ -227,6 +230,317 @@ export class Executor {
   public cancel(): void {
     logger.info('Workflow execution cancelled')
     this.isCancelled = true
+  }
+
+  /**
+   * Pauses the current workflow execution.
+   * Sets the pause flag to stop further execution at the next safe point.
+   */
+  public pause(): void {
+    logger.info('Workflow execution paused')
+    this.isPaused = true
+  }
+
+  /**
+   * Resumes the workflow execution.
+   * Clears the pause flag to allow execution to continue.
+   */
+  public resume(): void {
+    logger.info('Workflow execution resumed')
+    this.isPaused = false
+  }
+
+  /**
+   * Checks if the execution is currently paused
+   */
+  public isPausedState(): boolean {
+    return this.isPaused
+  }
+
+  /**
+   * Creates an executor and resumes execution from a paused state.
+   * 
+   * @param workflowState - Serialized workflow state
+   * @param executionContext - Saved execution context from pause
+   * @param environmentVariables - Environment variables
+   * @param workflowInput - Original workflow input
+   * @param workflowVariables - Workflow variables
+   * @param contextExtensions - Additional context (executionId, workspaceId, etc.)
+   * @returns Resumed executor ready to continue execution
+   */
+  static createFromPausedState(
+    workflowState: SerializedWorkflow,
+    executionContext: ExecutionContext,
+    environmentVariables: Record<string, string>,
+    workflowInput: any,
+    workflowVariables: Record<string, any> = {},
+    contextExtensions?: any
+  ): { executor: Executor; context: ExecutionContext } {
+    // Create a new executor with the saved state
+    const executor = new Executor(
+      {
+        workflow: workflowState,
+        currentBlockStates: {}, // Block states are in the context
+        envVarValues: environmentVariables,
+        workflowInput,
+        workflowVariables,
+        contextExtensions,
+      },
+      {}, // initialBlockStates not needed when resuming
+      environmentVariables,
+      workflowInput,
+      workflowVariables
+    )
+
+    // Return the executor along with the context to resume from
+    return { executor, context: executionContext }
+  }
+
+  /**
+   * Continues execution from a paused context.
+   * Similar to continueExecution but designed for resuming from database state.
+   * 
+   * @param workflowId - Workflow ID
+   * @param context - Execution context to resume from
+   * @returns Execution result
+   */
+  async resumeFromContext(
+    workflowId: string,
+    context: ExecutionContext
+  ): Promise<ExecutionResult | StreamingExecution> {
+    const { setIsExecuting, setPendingBlocks, setExecutionIdentifiers, reset } =
+      useExecutionStore.getState()
+    let finalOutput: NormalizedBlockOutput = {}
+
+    const resumeTime = new Date()
+    
+    trackWorkflowTelemetry('workflow_execution_resumed', {
+      workflowId,
+      executedBlockCount: context.executedBlocks.size,
+      resumeTime: resumeTime.toISOString(),
+    })
+
+    try {
+      // Only manage global execution state for parent executions
+      if (!this.isChildExecution) {
+        setIsExecuting(true)
+        setExecutionIdentifiers({
+          executionId: this.contextExtensions.executionId,
+          workflowId,
+        })
+      }
+
+      // Resume the execution loop from where it was paused
+      let hasMoreLayers = true
+      let iteration = 0
+      const maxIterations = 500
+
+      while (hasMoreLayers && iteration < maxIterations && !this.isCancelled && !this.isPaused) {
+        const nextLayer = this.getNextExecutionLayer(context)
+
+        if (nextLayer.length === 0) {
+          hasMoreLayers = this.hasMoreParallelWork(context)
+        } else {
+          const outputs = await this.executeLayer(nextLayer, context)
+
+          for (const output of outputs) {
+            if (
+              output &&
+              typeof output === 'object' &&
+              'stream' in output &&
+              'execution' in output
+            ) {
+              if (context.onStream) {
+                const streamingExec = output as StreamingExecution
+                const [streamForClient, streamForExecutor] = streamingExec.stream.tee()
+
+                const blockId = (streamingExec.execution as any).blockId
+
+                let responseFormat: any
+                if (this.initialBlockStates?.[blockId]) {
+                  const blockState = this.initialBlockStates[blockId] as any
+                  responseFormat = blockState.responseFormat
+                }
+
+                const processedClientStream = streamingResponseFormatProcessor.processStream(
+                  streamForClient,
+                  blockId,
+                  context.selectedOutputIds || [],
+                  responseFormat
+                )
+
+                const clientStreamingExec = { ...streamingExec, stream: processedClientStream }
+
+                try {
+                  await context.onStream(clientStreamingExec)
+                } catch (streamError: any) {
+                  logger.error('Error in onStream callback:', streamError)
+                }
+
+                const reader = streamForExecutor.getReader()
+                const decoder = new TextDecoder()
+                let fullContent = ''
+
+                try {
+                  while (true) {
+                    const { done, value } = await reader.read()
+                    if (done) break
+                    fullContent += decoder.decode(value, { stream: true })
+                  }
+
+                  const blockState = context.blockStates.get(blockId)
+                  if (blockState?.output) {
+                    if (responseFormat && fullContent) {
+                      try {
+                        const parsedContent = JSON.parse(fullContent)
+                        const structuredOutput = {
+                          ...parsedContent,
+                          tokens: blockState.output.tokens,
+                          toolCalls: blockState.output.toolCalls,
+                          providerTiming: blockState.output.providerTiming,
+                          cost: blockState.output.cost,
+                        }
+                        blockState.output = structuredOutput
+
+                        const blockLog = context.blockLogs.find((log) => log.blockId === blockId)
+                        if (blockLog) {
+                          blockLog.output = structuredOutput
+                        }
+                      } catch (parseError) {
+                        blockState.output.content = fullContent
+                      }
+                    } else {
+                      blockState.output.content = fullContent
+                    }
+                  }
+                } catch (readerError: any) {
+                  logger.error('Error reading stream for executor:', readerError)
+                } finally {
+                  try {
+                    reader.releaseLock()
+                  } catch (releaseError: any) {
+                    // Reader might already be released
+                  }
+                }
+              }
+            }
+          }
+
+          const normalizedOutputs = outputs
+            .filter(
+              (output) =>
+                !(
+                  typeof output === 'object' &&
+                  output !== null &&
+                  'stream' in output &&
+                  'execution' in output
+                )
+            )
+            .map((output) => output as NormalizedBlockOutput)
+
+          if (normalizedOutputs.length > 0) {
+            finalOutput = normalizedOutputs[normalizedOutputs.length - 1]
+          }
+
+          await this.loopManager.processLoopIterations(context)
+          await this.parallelManager.processParallelIterations(context)
+
+          const updatedNextLayer = this.getNextExecutionLayer(context)
+          if (updatedNextLayer.length === 0) {
+            hasMoreLayers = false
+          }
+        }
+
+        iteration++
+      }
+
+      // Handle pause (might be paused again during resume)
+      if (this.isPaused) {
+        return {
+          success: true,
+          output: finalOutput,
+          metadata: {
+            duration: Date.now() - new Date(context.metadata.startTime!).getTime(),
+            startTime: context.metadata.startTime!,
+            isPaused: true,
+            waitBlockInfo: (context as any).waitBlockInfo,
+            context: context,
+            workflowConnections: this.actualWorkflow.connections.map((conn: any) => ({
+              source: conn.source,
+              target: conn.target,
+            })),
+          },
+          logs: context.blockLogs,
+        }
+      }
+
+      // Handle cancellation
+      if (this.isCancelled) {
+        return {
+          success: false,
+          output: finalOutput,
+          error: 'Workflow execution was cancelled',
+          metadata: {
+            duration: Date.now() - new Date(context.metadata.startTime!).getTime(),
+            startTime: context.metadata.startTime!,
+            workflowConnections: this.actualWorkflow.connections.map((conn: any) => ({
+              source: conn.source,
+              target: conn.target,
+            })),
+          },
+          logs: context.blockLogs,
+        }
+      }
+
+      const endTime = new Date()
+      context.metadata.endTime = endTime.toISOString()
+      const duration = endTime.getTime() - new Date(context.metadata.startTime!).getTime()
+
+      trackWorkflowTelemetry('workflow_execution_completed_from_resume', {
+        workflowId,
+        duration,
+        blockCount: this.actualWorkflow.blocks.length,
+        executedBlockCount: context.executedBlocks.size,
+        endTime: endTime.toISOString(),
+        success: true,
+      })
+
+      return {
+        success: true,
+        output: finalOutput,
+        metadata: {
+          duration: duration,
+          startTime: context.metadata.startTime!,
+          endTime: context.metadata.endTime!,
+          workflowConnections: this.actualWorkflow.connections.map((conn: any) => ({
+            source: conn.source,
+            target: conn.target,
+          })),
+        },
+        logs: context.blockLogs,
+      }
+    } catch (error: any) {
+      logger.error('Workflow resume failed:', this.sanitizeError(error))
+
+      return {
+        success: false,
+        output: finalOutput,
+        error: this.extractErrorMessage(error),
+        metadata: {
+          duration: Date.now() - new Date(context.metadata.startTime!).getTime(),
+          startTime: context.metadata.startTime!,
+          workflowConnections: this.actualWorkflow.connections.map((conn: any) => ({
+            source: conn.source,
+            target: conn.target,
+          })),
+        },
+        logs: context.blockLogs,
+      }
+    } finally {
+      if (!this.isChildExecution && !this.isDebugging) {
+        reset()
+      }
+    }
   }
 
   /**
@@ -270,7 +584,7 @@ export class Executor {
       let iteration = 0
       const maxIterations = 500 // Safety limit for infinite loops
 
-      while (hasMoreLayers && iteration < maxIterations && !this.isCancelled) {
+      while (hasMoreLayers && iteration < maxIterations && !this.isCancelled && !this.isPaused) {
         const nextLayer = this.getNextExecutionLayer(context)
 
         if (this.isDebugging) {
@@ -411,6 +725,25 @@ export class Executor {
             // Process parallel iterations - similar to loops but conceptually for parallel execution
             await this.parallelManager.processParallelIterations(context)
 
+            // Check if a Wait block has requested a pause
+            if ((context as any).shouldPauseAfterBlock) {
+              if (context.metadata && !context.metadata.waitBlockInfo) {
+                ;(context.metadata as any).waitBlockInfo = (context as any).waitBlockInfo
+              }
+
+              logger.info('Wait block detected - pausing workflow execution', {
+                workflowId,
+                pauseReason: (context as any).pauseReason,
+              })
+
+              // Trigger the pause
+              this.pause()
+
+              // The pause will be handled in the next section
+              // Break out of the execution loop
+              break
+            }
+
             // Continue execution for any newly activated paths
             // Only stop execution if there are no more blocks to execute
             const updatedNextLayer = this.getNextExecutionLayer(context)
@@ -440,6 +773,34 @@ export class Executor {
           metadata: {
             duration: Date.now() - startTime.getTime(),
             startTime: context.metadata.startTime!,
+            workflowConnections: this.actualWorkflow.connections.map((conn: any) => ({
+              source: conn.source,
+              target: conn.target,
+            })),
+          },
+          logs: context.blockLogs,
+        }
+      }
+
+      // Handle pause
+      if (this.isPaused) {
+        trackWorkflowTelemetry('workflow_execution_paused', {
+          workflowId,
+          duration: Date.now() - startTime.getTime(),
+          blockCount: this.actualWorkflow.blocks.length,
+          executedBlockCount: context.executedBlocks.size,
+          startTime: startTime.toISOString(),
+        })
+
+        return {
+          success: true,
+          output: finalOutput,
+          metadata: {
+            duration: Date.now() - startTime.getTime(),
+            startTime: context.metadata.startTime!,
+            isPaused: true,
+            waitBlockInfo: (context as any).waitBlockInfo,
+            context: context, // Include context for resumption
             workflowConnections: this.actualWorkflow.connections.map((conn: any) => ({
               source: conn.source,
               target: conn.target,
@@ -1843,10 +2204,25 @@ export class Executor {
       if (!handler) {
         throw new Error(`No handler found for block type: ${block.metadata?.id}`)
       }
+      logger.info(`Using handler ${handler.constructor.name} for block ${block.metadata?.id}`)
+      
+      if (block.metadata?.id === 'wait') {
+        logger.info('Wait block configuration:', {
+          tool: block.config.tool,
+          params: block.config.params,
+          metadata: block.metadata
+        })
+      }
 
       // Execute the block
       const startTime = performance.now()
-      const rawOutput = await handler.execute(block, inputs, context)
+      let rawOutput
+      try {
+        rawOutput = await handler.execute(block, inputs, context)
+      } catch (handlerError) {
+        logger.error(`Handler error for ${block.metadata?.id}:`, handlerError)
+        throw handlerError
+      }
       const executionTime = performance.now() - startTime
 
       // Remove this block from active blocks immediately after execution

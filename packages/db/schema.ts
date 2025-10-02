@@ -320,6 +320,37 @@ export const workflowExecutionLogs = pgTable(
   })
 )
 
+export const pausedWorkflowExecutions = pgTable(
+  'paused_workflow_executions',
+  {
+    id: text('id').primaryKey(),
+    workflowId: text('workflow_id')
+      .notNull()
+      .references(() => workflow.id, { onDelete: 'cascade' }),
+    executionId: text('execution_id').notNull(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    pausedAt: timestamp('paused_at').notNull(),
+    executionContext: jsonb('execution_context').notNull(), // Serialized ExecutionContext
+    workflowState: jsonb('workflow_state').notNull(), // Serialized workflow state (blocks, edges, loops, parallels)
+    environmentVariables: jsonb('environment_variables').notNull(), // Encrypted environment variables
+    workflowInput: jsonb('workflow_input'), // Original workflow input
+    metadata: jsonb('metadata').notNull().default('{}'), // Additional metadata (trigger type, etc.)
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    workflowIdIdx: index('paused_executions_workflow_id_idx').on(table.workflowId),
+    executionIdIdx: index('paused_executions_execution_id_idx').on(table.executionId),
+    userIdIdx: index('paused_executions_user_id_idx').on(table.userId),
+    pausedAtIdx: index('paused_executions_paused_at_idx').on(table.pausedAt),
+    executionIdUnique: uniqueIndex('paused_executions_execution_id_unique').on(
+      table.executionId
+    ),
+  })
+)
+
 export const environment = pgTable('environment', {
   id: text('id').primaryKey(), // Use the user id as the key
   userId: text('user_id')

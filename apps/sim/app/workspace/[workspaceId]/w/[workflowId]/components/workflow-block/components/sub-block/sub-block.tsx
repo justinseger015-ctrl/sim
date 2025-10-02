@@ -34,6 +34,7 @@ import {
   TimeInput,
   ToolInput,
   TriggerConfig,
+  WaitStatus,
   WebhookConfig,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/components'
 import type { SubBlockConfig } from '@/blocks/types'
@@ -353,6 +354,8 @@ export function SubBlock({
             disabled={isDisabled}
           />
         )
+      case 'wait-status':
+        return <WaitStatus blockId={blockId} isPreview={isPreview} disabled={isDisabled} />
       case 'oauth-input':
         return (
           <CredentialSelector

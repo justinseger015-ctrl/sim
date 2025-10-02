@@ -1,5 +1,9 @@
 {
+<<<<<<< HEAD
   "id": "fdcc2936-f05b-4eec-be51-ca8018cc21aa",
+=======
+  "id": "948549ea-b245-4392-9de3-39c6706da856",
+>>>>>>> 687dddbc6 (CHeckpoint)
   "prevId": "a116a676-ee5a-417c-bea4-dc43296de3bb",
   "version": "7",
   "dialect": "postgresql",
@@ -109,8 +113,17 @@
           "name": "account_user_id_user_id_fk",
           "tableFrom": "account",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -201,8 +214,17 @@
           "name": "api_key_user_id_user_id_fk",
           "tableFrom": "api_key",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -210,8 +232,17 @@
           "name": "api_key_workspace_id_workspace_id_fk",
           "tableFrom": "api_key",
           "tableTo": "workspace",
+<<<<<<< HEAD
           "columnsFrom": ["workspace_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -219,8 +250,17 @@
           "name": "api_key_created_by_user_id_fk",
           "tableFrom": "api_key",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["created_by"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -230,7 +270,13 @@
         "api_key_key_unique": {
           "name": "api_key_key_unique",
           "nullsNotDistinct": false,
+<<<<<<< HEAD
           "columns": ["key"]
+=======
+          "columns": [
+            "key"
+          ]
+>>>>>>> 687dddbc6 (CHeckpoint)
         }
       },
       "policies": {},
@@ -360,8 +406,17 @@
           "name": "chat_workflow_id_workflow_id_fk",
           "tableFrom": "chat",
           "tableTo": "workflow",
+<<<<<<< HEAD
           "columnsFrom": ["workflow_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "workflow_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -369,8 +424,17 @@
           "name": "chat_user_id_user_id_fk",
           "tableFrom": "chat",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -539,8 +603,17 @@
           "name": "copilot_chats_user_id_user_id_fk",
           "tableFrom": "copilot_chats",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -548,8 +621,17 @@
           "name": "copilot_chats_workflow_id_workflow_id_fk",
           "tableFrom": "copilot_chats",
           "tableTo": "workflow",
+<<<<<<< HEAD
           "columnsFrom": ["workflow_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "workflow_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -716,8 +798,17 @@
           "name": "copilot_feedback_user_id_user_id_fk",
           "tableFrom": "copilot_feedback",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -725,8 +816,17 @@
           "name": "copilot_feedback_chat_id_copilot_chats_id_fk",
           "tableFrom": "copilot_feedback",
           "tableTo": "copilot_chats",
+<<<<<<< HEAD
           "columnsFrom": ["chat_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "chat_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -792,8 +892,17 @@
           "name": "custom_tools_user_id_user_id_fk",
           "tableFrom": "custom_tools",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1377,8 +1486,17 @@
           "name": "document_knowledge_base_id_knowledge_base_id_fk",
           "tableFrom": "document",
           "tableTo": "knowledge_base",
+<<<<<<< HEAD
           "columnsFrom": ["knowledge_base_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "knowledge_base_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1800,8 +1918,17 @@
           "name": "embedding_knowledge_base_id_knowledge_base_id_fk",
           "tableFrom": "embedding",
           "tableTo": "knowledge_base",
+<<<<<<< HEAD
           "columnsFrom": ["knowledge_base_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "knowledge_base_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1809,8 +1936,17 @@
           "name": "embedding_document_id_document_id_fk",
           "tableFrom": "embedding",
           "tableTo": "document",
+<<<<<<< HEAD
           "columnsFrom": ["document_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "document_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1862,8 +1998,17 @@
           "name": "environment_user_id_user_id_fk",
           "tableFrom": "environment",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1873,7 +2018,13 @@
         "environment_user_id_unique": {
           "name": "environment_user_id_unique",
           "nullsNotDistinct": false,
+<<<<<<< HEAD
           "columns": ["user_id"]
+=======
+          "columns": [
+            "user_id"
+          ]
+>>>>>>> 687dddbc6 (CHeckpoint)
         }
       },
       "policies": {},
@@ -2062,8 +2213,17 @@
           "name": "invitation_inviter_id_user_id_fk",
           "tableFrom": "invitation",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["inviter_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "inviter_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2071,8 +2231,17 @@
           "name": "invitation_organization_id_organization_id_fk",
           "tableFrom": "invitation",
           "tableTo": "organization",
+<<<<<<< HEAD
           "columnsFrom": ["organization_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2239,8 +2408,17 @@
           "name": "knowledge_base_user_id_user_id_fk",
           "tableFrom": "knowledge_base",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2248,8 +2426,17 @@
           "name": "knowledge_base_workspace_id_workspace_id_fk",
           "tableFrom": "knowledge_base",
           "tableTo": "workspace",
+<<<<<<< HEAD
           "columnsFrom": ["workspace_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2374,8 +2561,17 @@
           "name": "knowledge_base_tag_definitions_knowledge_base_id_knowledge_base_id_fk",
           "tableFrom": "knowledge_base_tag_definitions",
           "tableTo": "knowledge_base",
+<<<<<<< HEAD
           "columnsFrom": ["knowledge_base_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "knowledge_base_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2466,8 +2662,17 @@
           "name": "marketplace_workflow_id_workflow_id_fk",
           "tableFrom": "marketplace",
           "tableTo": "workflow",
+<<<<<<< HEAD
           "columnsFrom": ["workflow_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "workflow_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2475,8 +2680,17 @@
           "name": "marketplace_author_id_user_id_fk",
           "tableFrom": "marketplace",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["author_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "author_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2676,8 +2890,17 @@
           "name": "mcp_servers_workspace_id_workspace_id_fk",
           "tableFrom": "mcp_servers",
           "tableTo": "workspace",
+<<<<<<< HEAD
           "columnsFrom": ["workspace_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2685,8 +2908,17 @@
           "name": "mcp_servers_created_by_user_id_fk",
           "tableFrom": "mcp_servers",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["created_by"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -2770,8 +3002,17 @@
           "name": "member_user_id_user_id_fk",
           "tableFrom": "member",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2779,8 +3020,17 @@
           "name": "member_organization_id_organization_id_fk",
           "tableFrom": "member",
           "tableTo": "organization",
+<<<<<<< HEAD
           "columnsFrom": ["organization_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2904,8 +3154,17 @@
           "name": "memory_workflow_id_workflow_id_fk",
           "tableFrom": "memory",
           "tableTo": "workflow",
+<<<<<<< HEAD
           "columnsFrom": ["workflow_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "workflow_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2979,6 +3238,200 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+<<<<<<< HEAD
+=======
+    "public.paused_workflow_executions": {
+      "name": "paused_workflow_executions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "workflow_id": {
+          "name": "workflow_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "execution_id": {
+          "name": "execution_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "paused_at": {
+          "name": "paused_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "execution_context": {
+          "name": "execution_context",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "workflow_state": {
+          "name": "workflow_state",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "environment_variables": {
+          "name": "environment_variables",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "workflow_input": {
+          "name": "workflow_input",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "metadata": {
+          "name": "metadata",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "paused_executions_workflow_id_idx": {
+          "name": "paused_executions_workflow_id_idx",
+          "columns": [
+            {
+              "expression": "workflow_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "paused_executions_execution_id_idx": {
+          "name": "paused_executions_execution_id_idx",
+          "columns": [
+            {
+              "expression": "execution_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "paused_executions_user_id_idx": {
+          "name": "paused_executions_user_id_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "paused_executions_paused_at_idx": {
+          "name": "paused_executions_paused_at_idx",
+          "columns": [
+            {
+              "expression": "paused_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "paused_executions_execution_id_unique": {
+          "name": "paused_executions_execution_id_unique",
+          "columns": [
+            {
+              "expression": "execution_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "paused_workflow_executions_workflow_id_workflow_id_fk": {
+          "name": "paused_workflow_executions_workflow_id_workflow_id_fk",
+          "tableFrom": "paused_workflow_executions",
+          "tableTo": "workflow",
+          "columnsFrom": [
+            "workflow_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "paused_workflow_executions_user_id_user_id_fk": {
+          "name": "paused_workflow_executions_user_id_user_id_fk",
+          "tableFrom": "paused_workflow_executions",
+          "tableTo": "user",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+>>>>>>> 687dddbc6 (CHeckpoint)
     "public.permissions": {
       "name": "permissions",
       "schema": "",
@@ -3174,8 +3627,17 @@
           "name": "permissions_user_id_user_id_fk",
           "tableFrom": "permissions",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -3282,8 +3744,17 @@
           "name": "session_user_id_user_id_fk",
           "tableFrom": "session",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -3291,8 +3762,17 @@
           "name": "session_active_organization_id_organization_id_fk",
           "tableFrom": "session",
           "tableTo": "organization",
+<<<<<<< HEAD
           "columnsFrom": ["active_organization_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "active_organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -3302,7 +3782,13 @@
         "session_token_unique": {
           "name": "session_token_unique",
           "nullsNotDistinct": false,
+<<<<<<< HEAD
           "columns": ["token"]
+=======
+          "columns": [
+            "token"
+          ]
+>>>>>>> 687dddbc6 (CHeckpoint)
         }
       },
       "policies": {},
@@ -3395,6 +3881,7 @@
           "notNull": true,
           "default": false
         },
+<<<<<<< HEAD
         "copilot_enabled_models": {
           "name": "copilot_enabled_models",
           "type": "jsonb",
@@ -3402,6 +3889,8 @@
           "notNull": true,
           "default": "'{}'"
         },
+=======
+>>>>>>> 687dddbc6 (CHeckpoint)
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp",
@@ -3416,8 +3905,17 @@
           "name": "settings_user_id_user_id_fk",
           "tableFrom": "settings",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -3427,7 +3925,13 @@
         "settings_user_id_unique": {
           "name": "settings_user_id_unique",
           "nullsNotDistinct": false,
+<<<<<<< HEAD
           "columns": ["user_id"]
+=======
+          "columns": [
+            "user_id"
+          ]
+>>>>>>> 687dddbc6 (CHeckpoint)
         }
       },
       "policies": {},
@@ -3554,8 +4058,17 @@
           "name": "sso_provider_user_id_user_id_fk",
           "tableFrom": "sso_provider",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -3563,8 +4076,17 @@
           "name": "sso_provider_organization_id_organization_id_fk",
           "tableFrom": "sso_provider",
           "tableTo": "organization",
+<<<<<<< HEAD
           "columnsFrom": ["organization_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -3866,8 +4388,17 @@
           "name": "template_stars_user_id_user_id_fk",
           "tableFrom": "template_stars",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -3875,8 +4406,17 @@
           "name": "template_stars_template_id_templates_id_fk",
           "tableFrom": "template_stars",
           "tableTo": "templates",
+<<<<<<< HEAD
           "columnsFrom": ["template_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "template_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -4157,8 +4697,17 @@
           "name": "templates_workflow_id_workflow_id_fk",
           "tableFrom": "templates",
           "tableTo": "workflow",
+<<<<<<< HEAD
           "columnsFrom": ["workflow_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "workflow_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -4166,8 +4715,17 @@
           "name": "templates_user_id_user_id_fk",
           "tableFrom": "templates",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -4238,7 +4796,13 @@
         "user_email_unique": {
           "name": "user_email_unique",
           "nullsNotDistinct": false,
+<<<<<<< HEAD
           "columns": ["email"]
+=======
+          "columns": [
+            "email"
+          ]
+>>>>>>> 687dddbc6 (CHeckpoint)
         }
       },
       "policies": {},
@@ -4454,8 +5018,17 @@
           "name": "user_stats_user_id_user_id_fk",
           "tableFrom": "user_stats",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -4465,7 +5038,13 @@
         "user_stats_user_id_unique": {
           "name": "user_stats_user_id_unique",
           "nullsNotDistinct": false,
+<<<<<<< HEAD
           "columns": ["user_id"]
+=======
+          "columns": [
+            "user_id"
+          ]
+>>>>>>> 687dddbc6 (CHeckpoint)
         }
       },
       "policies": {},
@@ -4582,7 +5161,13 @@
         "waitlist_email_unique": {
           "name": "waitlist_email_unique",
           "nullsNotDistinct": false,
+<<<<<<< HEAD
           "columns": ["email"]
+=======
+          "columns": [
+            "email"
+          ]
+>>>>>>> 687dddbc6 (CHeckpoint)
         }
       },
       "policies": {},
@@ -4673,8 +5258,17 @@
           "name": "webhook_workflow_id_workflow_id_fk",
           "tableFrom": "webhook",
           "tableTo": "workflow",
+<<<<<<< HEAD
           "columnsFrom": ["workflow_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "workflow_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -4682,8 +5276,17 @@
           "name": "webhook_block_id_workflow_blocks_id_fk",
           "tableFrom": "webhook",
           "tableTo": "workflow_blocks",
+<<<<<<< HEAD
           "columnsFrom": ["block_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "block_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -4883,8 +5486,17 @@
           "name": "workflow_user_id_user_id_fk",
           "tableFrom": "workflow",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -4892,8 +5504,17 @@
           "name": "workflow_workspace_id_workspace_id_fk",
           "tableFrom": "workflow",
           "tableTo": "workspace",
+<<<<<<< HEAD
           "columnsFrom": ["workspace_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -4901,8 +5522,17 @@
           "name": "workflow_folder_id_workflow_folder_id_fk",
           "tableFrom": "workflow",
           "tableTo": "workflow_folder",
+<<<<<<< HEAD
           "columnsFrom": ["folder_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "folder_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -4910,8 +5540,17 @@
           "name": "workflow_pinned_api_key_id_api_key_id_fk",
           "tableFrom": "workflow",
           "tableTo": "api_key",
+<<<<<<< HEAD
           "columnsFrom": ["pinned_api_key_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "pinned_api_key_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -5083,8 +5722,17 @@
           "name": "workflow_blocks_workflow_id_workflow_id_fk",
           "tableFrom": "workflow_blocks",
           "tableTo": "workflow",
+<<<<<<< HEAD
           "columnsFrom": ["workflow_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "workflow_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -5296,8 +5944,17 @@
           "name": "workflow_checkpoints_user_id_user_id_fk",
           "tableFrom": "workflow_checkpoints",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -5305,8 +5962,17 @@
           "name": "workflow_checkpoints_workflow_id_workflow_id_fk",
           "tableFrom": "workflow_checkpoints",
           "tableTo": "workflow",
+<<<<<<< HEAD
           "columnsFrom": ["workflow_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "workflow_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -5314,8 +5980,17 @@
           "name": "workflow_checkpoints_chat_id_copilot_chats_id_fk",
           "tableFrom": "workflow_checkpoints",
           "tableTo": "copilot_chats",
+<<<<<<< HEAD
           "columnsFrom": ["chat_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "chat_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -5454,8 +6129,17 @@
           "name": "workflow_deployment_version_workflow_id_workflow_id_fk",
           "tableFrom": "workflow_deployment_version",
           "tableTo": "workflow",
+<<<<<<< HEAD
           "columnsFrom": ["workflow_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "workflow_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -5608,8 +6292,17 @@
           "name": "workflow_edges_workflow_id_workflow_id_fk",
           "tableFrom": "workflow_edges",
           "tableTo": "workflow",
+<<<<<<< HEAD
           "columnsFrom": ["workflow_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "workflow_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -5617,8 +6310,17 @@
           "name": "workflow_edges_source_block_id_workflow_blocks_id_fk",
           "tableFrom": "workflow_edges",
           "tableTo": "workflow_blocks",
+<<<<<<< HEAD
           "columnsFrom": ["source_block_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "source_block_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -5626,8 +6328,17 @@
           "name": "workflow_edges_target_block_id_workflow_blocks_id_fk",
           "tableFrom": "workflow_edges",
           "tableTo": "workflow_blocks",
+<<<<<<< HEAD
           "columnsFrom": ["target_block_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "target_block_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -5841,8 +6552,17 @@
           "name": "workflow_execution_logs_workflow_id_workflow_id_fk",
           "tableFrom": "workflow_execution_logs",
           "tableTo": "workflow",
+<<<<<<< HEAD
           "columnsFrom": ["workflow_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "workflow_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -5850,8 +6570,17 @@
           "name": "workflow_execution_logs_state_snapshot_id_workflow_execution_snapshots_id_fk",
           "tableFrom": "workflow_execution_logs",
           "tableTo": "workflow_execution_snapshots",
+<<<<<<< HEAD
           "columnsFrom": ["state_snapshot_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "state_snapshot_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -5971,8 +6700,17 @@
           "name": "workflow_execution_snapshots_workflow_id_workflow_id_fk",
           "tableFrom": "workflow_execution_snapshots",
           "tableTo": "workflow",
+<<<<<<< HEAD
           "columnsFrom": ["workflow_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "workflow_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -6117,8 +6855,17 @@
           "name": "workflow_folder_user_id_user_id_fk",
           "tableFrom": "workflow_folder",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -6126,8 +6873,17 @@
           "name": "workflow_folder_workspace_id_workspace_id_fk",
           "tableFrom": "workflow_folder",
           "tableTo": "workspace",
+<<<<<<< HEAD
           "columnsFrom": ["workspace_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -6267,8 +7023,17 @@
           "name": "workflow_log_webhook_workflow_id_workflow_id_fk",
           "tableFrom": "workflow_log_webhook",
           "tableTo": "workflow",
+<<<<<<< HEAD
           "columnsFrom": ["workflow_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "workflow_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -6434,8 +7199,17 @@
           "name": "workflow_log_webhook_delivery_subscription_id_workflow_log_webhook_id_fk",
           "tableFrom": "workflow_log_webhook_delivery",
           "tableTo": "workflow_log_webhook",
+<<<<<<< HEAD
           "columnsFrom": ["subscription_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "subscription_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -6443,8 +7217,17 @@
           "name": "workflow_log_webhook_delivery_workflow_id_workflow_id_fk",
           "tableFrom": "workflow_log_webhook_delivery",
           "tableTo": "workflow",
+<<<<<<< HEAD
           "columnsFrom": ["workflow_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "workflow_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -6571,8 +7354,17 @@
           "name": "workflow_schedule_workflow_id_workflow_id_fk",
           "tableFrom": "workflow_schedule",
           "tableTo": "workflow",
+<<<<<<< HEAD
           "columnsFrom": ["workflow_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "workflow_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -6580,8 +7372,17 @@
           "name": "workflow_schedule_block_id_workflow_blocks_id_fk",
           "tableFrom": "workflow_schedule",
           "tableTo": "workflow_blocks",
+<<<<<<< HEAD
           "columnsFrom": ["block_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "block_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -6679,8 +7480,17 @@
           "name": "workflow_subflows_workflow_id_workflow_id_fk",
           "tableFrom": "workflow_subflows",
           "tableTo": "workflow",
+<<<<<<< HEAD
           "columnsFrom": ["workflow_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "workflow_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -6734,8 +7544,17 @@
           "name": "workspace_owner_id_user_id_fk",
           "tableFrom": "workspace",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["owner_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -6806,8 +7625,17 @@
           "name": "workspace_environment_workspace_id_workspace_id_fk",
           "tableFrom": "workspace_environment",
           "tableTo": "workspace",
+<<<<<<< HEAD
           "columnsFrom": ["workspace_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -6908,8 +7736,17 @@
           "name": "workspace_invitation_workspace_id_workspace_id_fk",
           "tableFrom": "workspace_invitation",
           "tableTo": "workspace",
+<<<<<<< HEAD
           "columnsFrom": ["workspace_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -6917,8 +7754,17 @@
           "name": "workspace_invitation_inviter_id_user_id_fk",
           "tableFrom": "workspace_invitation",
           "tableTo": "user",
+<<<<<<< HEAD
           "columnsFrom": ["inviter_id"],
           "columnsTo": ["id"],
+=======
+          "columnsFrom": [
+            "inviter_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+>>>>>>> 687dddbc6 (CHeckpoint)
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -6928,7 +7774,13 @@
         "workspace_invitation_token_unique": {
           "name": "workspace_invitation_token_unique",
           "nullsNotDistinct": false,
+<<<<<<< HEAD
           "columns": ["token"]
+=======
+          "columns": [
+            "token"
+          ]
+>>>>>>> 687dddbc6 (CHeckpoint)
         }
       },
       "policies": {},
@@ -6940,17 +7792,43 @@
     "public.permission_type": {
       "name": "permission_type",
       "schema": "public",
+<<<<<<< HEAD
       "values": ["admin", "write", "read"]
+=======
+      "values": [
+        "admin",
+        "write",
+        "read"
+      ]
+>>>>>>> 687dddbc6 (CHeckpoint)
     },
     "public.webhook_delivery_status": {
       "name": "webhook_delivery_status",
       "schema": "public",
+<<<<<<< HEAD
       "values": ["pending", "in_progress", "success", "failed"]
+=======
+      "values": [
+        "pending",
+        "in_progress",
+        "success",
+        "failed"
+      ]
+>>>>>>> 687dddbc6 (CHeckpoint)
     },
     "public.workspace_invitation_status": {
       "name": "workspace_invitation_status",
       "schema": "public",
+<<<<<<< HEAD
       "values": ["pending", "accepted", "rejected", "cancelled"]
+=======
+      "values": [
+        "pending",
+        "accepted",
+        "rejected",
+        "cancelled"
+      ]
+>>>>>>> 687dddbc6 (CHeckpoint)
     }
   },
   "schemas": {},
@@ -6963,4 +7841,8 @@
     "schemas": {},
     "tables": {}
   }
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> 687dddbc6 (CHeckpoint)
