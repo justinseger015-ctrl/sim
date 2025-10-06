@@ -5,8 +5,25 @@ import { getBaseUrl } from '@/lib/urls/utils'
 
 const logger = createLogger('WaitBlockHandler')
 
-// Helper function to sleep for a specified number of milliseconds
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+// Helper function to sleep for a specified number of milliseconds with cancellation support
+const sleep = async (ms: number, checkCancelled?: () => boolean): Promise<boolean> => {
+  const chunkMs = 100 // Check every 100ms
+  let elapsed = 0
+  
+  while (elapsed < ms) {
+    // Check if execution was cancelled
+    if (checkCancelled && checkCancelled()) {
+      return false // Sleep was interrupted
+    }
+    
+    // Sleep for a chunk or remaining time, whichever is smaller
+    const sleepTime = Math.min(chunkMs, ms - elapsed)
+    await new Promise(resolve => setTimeout(resolve, sleepTime))
+    elapsed += sleepTime
+  }
+  
+  return true // Sleep completed normally
+}
 
 /**
  * Handler for Wait blocks that pause workflow execution.
@@ -49,7 +66,25 @@ export class WaitBlockHandler implements BlockHandler {
       logger.info(`Waiting for ${waitMs}ms (${timeValue} ${timeUnit})`)
       
       // Actually sleep for the specified duration
-      await sleep(waitMs)
+      // The executor updates context.isCancelled when cancel() is called
+      const checkCancelled = () => {
+        // Check if execution was marked as cancelled in the context
+        // This gets updated by the executor when user cancels
+        return (context as any).isCancelled === true
+      }
+      
+      const completed = await sleep(waitMs, checkCancelled)
+      
+      if (!completed) {
+        logger.info('Wait was interrupted by cancellation')
+        return {
+          pausedAt,
+          triggerType: 'time',
+          waitDuration: waitMs,
+          status: 'cancelled',
+          message: `Wait was cancelled after starting`,
+        }
+      }
       
       const resumedAt = new Date().toISOString()
       

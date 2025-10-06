@@ -86,6 +86,7 @@ export class Executor {
   private isCancelled = false
   private isPaused = false
   private isChildExecution = false
+  private currentContext: ExecutionContext | null = null
 
   /**
    * Updates block output with streamed content, handling both structured and unstructured responses
@@ -230,6 +231,10 @@ export class Executor {
   public cancel(): void {
     logger.info('Workflow execution cancelled')
     this.isCancelled = true
+    // Also update the context so handlers can detect cancellation
+    if (this.currentContext) {
+      ;(this.currentContext as any).isCancelled = true
+    }
   }
 
   /**
@@ -311,6 +316,9 @@ export class Executor {
     const { setIsExecuting, setPendingBlocks, setExecutionIdentifiers, reset } =
       useExecutionStore.getState()
     let finalOutput: NormalizedBlockOutput = {}
+    
+    // Set current context for cancellation support
+    this.currentContext = context
 
     const resumeTime = new Date()
     
@@ -563,6 +571,9 @@ export class Executor {
         logs: context.blockLogs,
       }
     } finally {
+      // Clear current context
+      this.currentContext = null
+      
       if (!this.isChildExecution) {
         setPendingBlocks([])
         setExecutionIdentifiers({ executionId: null, isResuming: false })
@@ -597,6 +608,7 @@ export class Executor {
     this.validateWorkflow(startBlockId)
 
     const context = this.createExecutionContext(workflowId, startTime, startBlockId)
+    this.currentContext = context
 
     try {
       // Only manage global execution state for parent executions
@@ -893,6 +905,9 @@ export class Executor {
         logs: context.blockLogs,
       }
     } finally {
+      // Clear current context
+      this.currentContext = null
+      
       // Only reset global state for parent executions
       // Don't reset when paused - we need the executor and executionId in store for resume
       if (!this.isChildExecution && !this.isDebugging && !this.isPaused) {
@@ -2247,6 +2262,8 @@ export class Executor {
       const startTime = performance.now()
       let rawOutput
       try {
+        // Pass cancellation state to handlers through context
+        ;(context as any).isCancelled = this.isCancelled
         rawOutput = await handler.execute(block, inputs, context)
       } catch (handlerError) {
         logger.error(`Handler error for ${block.metadata?.id}:`, handlerError)
