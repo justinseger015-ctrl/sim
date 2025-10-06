@@ -155,6 +155,12 @@ export class Executor {
             isChildExecution?: boolean
             // Marks executions that must use deployed constraints (API/webhook/schedule/chat)
             isDeployedContext?: boolean
+            // Deployment version ID for deployed workflows
+            deploymentVersionId?: string | null
+            // Marks if execution is resuming from a paused state
+            isResuming?: boolean
+            // Resume input data (for webhook resume)
+            resumeInput?: any
           }
         },
     private initialBlockStates: Record<string, BlockOutput> = {},
@@ -337,6 +343,16 @@ export class Executor {
     
     // Mark that we're resuming so blocks can detect it
     ;(context as any).isResuming = true
+    
+    // Pass resume input if available
+    if (this.contextExtensions?.resumeInput) {
+      ;(context as any).resumeInput = this.contextExtensions.resumeInput
+    }
+    
+    // Preserve deployment version ID during resume
+    if (this.contextExtensions?.deploymentVersionId) {
+      ;(context as any).deploymentVersionId = this.contextExtensions.deploymentVersionId
+    }
 
     try {
       // Only manage global execution state for parent executions
@@ -1155,6 +1171,11 @@ export class Executor {
       edges: this.contextExtensions.edges || [],
       onStream: this.contextExtensions.onStream,
       onBlockComplete: this.contextExtensions.onBlockComplete,
+    }
+    
+    // Add deployment version ID if available
+    if (this.contextExtensions.deploymentVersionId) {
+      ;(context as any).deploymentVersionId = this.contextExtensions.deploymentVersionId
     }
 
     Object.entries(this.initialBlockStates).forEach(([blockId, output]) => {

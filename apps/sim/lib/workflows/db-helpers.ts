@@ -102,6 +102,61 @@ export async function loadDeployedWorkflowState(
   }
 }
 
+export async function getActiveDeploymentVersionId(
+  workflowId: string
+): Promise<string | null> {
+  try {
+    const [active] = await db
+      .select({
+        id: workflowDeploymentVersion.id,
+      })
+      .from(workflowDeploymentVersion)
+      .where(
+        and(
+          eq(workflowDeploymentVersion.workflowId, workflowId),
+          eq(workflowDeploymentVersion.isActive, true)
+        )
+      )
+      .limit(1)
+
+    return active?.id || null
+  } catch (error) {
+    logger.error(`Error getting active deployment version ID for ${workflowId}:`, error)
+    return null
+  }
+}
+
+export async function loadDeploymentVersionById(
+  deploymentVersionId: string
+): Promise<NormalizedWorkflowData | null> {
+  try {
+    const [deployment] = await db
+      .select({
+        state: workflowDeploymentVersion.state,
+      })
+      .from(workflowDeploymentVersion)
+      .where(eq(workflowDeploymentVersion.id, deploymentVersionId))
+      .limit(1)
+
+    if (!deployment?.state) {
+      return null
+    }
+
+    const state = deployment.state as WorkflowState
+
+    return {
+      blocks: state.blocks || {},
+      edges: state.edges || [],
+      loops: state.loops || {},
+      parallels: state.parallels || {},
+      isFromNormalizedTables: false,
+    }
+  } catch (error) {
+    logger.error(`Error loading deployment version ${deploymentVersionId}:`, error)
+    return null
+  }
+}
+
 /**
  * Load workflow state from normalized tables
  * Returns null if no data found (fallback to JSON blob)

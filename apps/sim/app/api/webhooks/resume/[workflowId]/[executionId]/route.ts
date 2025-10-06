@@ -253,8 +253,33 @@ export async function POST(
         variables: resumeData.environmentVariables || {},
       })
       
+      // If deployment version ID is stored in metadata, use that specific version
+      let workflowStateToUse = resumeData.workflowState
+      const deploymentVersionId = resumeData.metadata?.deploymentVersionId
+      
+      if (deploymentVersionId) {
+        logger.info(`[${requestId}] Loading specific deployment version from metadata: ${deploymentVersionId}`)
+        const { loadDeploymentVersionById } = await import('@/lib/workflows/db-helpers')
+        const deploymentData = await loadDeploymentVersionById(deploymentVersionId)
+        
+        if (deploymentData) {
+          // Use deployment version state but preserve the original context
+          const { Serializer } = await import('@/serializer')
+          workflowStateToUse = new Serializer().serializeWorkflow(
+            deploymentData.blocks,
+            deploymentData.edges,
+            deploymentData.loops || {},
+            deploymentData.parallels || {},
+            false
+          )
+          logger.info(`[${requestId}] Using deployment version state`)
+        } else {
+          logger.warn(`[${requestId}] Deployment version ${deploymentVersionId} not found, using original state`)
+        }
+      }
+      
       const executorData = Executor.createFromPausedState(
-        resumeData.workflowState,
+        workflowStateToUse,
         resumeData.executionContext,
         resumeData.environmentVariables,
         resumeData.workflowInput,
@@ -265,6 +290,7 @@ export async function POST(
           isDeployedContext: true,
           resumeInput, // Include resume input in context for blocks to access
           isResuming: true, // Mark that we're resuming
+          deploymentVersionId: resumeData.metadata?.deploymentVersionId, // Pass through deployment version ID from metadata
         }
       )
       
@@ -348,6 +374,7 @@ export async function POST(
             ...metadataWithoutContext,
             waitBlockInfo,
             isDeployedContext: true,
+            deploymentVersionId: resumeData.metadata?.deploymentVersionId,
           }
 
           await pauseResumeService.pauseExecution({

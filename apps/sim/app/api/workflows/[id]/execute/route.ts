@@ -170,10 +170,16 @@ export async function executeWorkflow(
 
     // Load workflow data from deployed state for API executions
     const deployedData = await loadDeployedWorkflowState(workflowId)
+    
+    // Get the deployment version ID
+    const { getActiveDeploymentVersionId } = await import('@/lib/workflows/db-helpers')
+    const deploymentVersionId = await getActiveDeploymentVersionId(workflowId)
 
     // Use deployed data as primary source for API executions
     const { blocks, edges, loops, parallels } = deployedData
-    logger.info(`[${requestId}] Using deployed state for workflow execution: ${workflowId}`)
+    logger.info(`[${requestId}] Using deployed state for workflow execution: ${workflowId}`, {
+      deploymentVersionId,
+    })
     logger.debug(`[${requestId}] Deployed data loaded:`, {
       blocksCount: Object.keys(blocks || {}).length,
       edgesCount: (edges || []).length,
@@ -383,7 +389,10 @@ export async function executeWorkflow(
       envVarValues: decryptedEnvVars,
       workflowInput: processedInput,
       workflowVariables,
-      contextExtensions,
+      contextExtensions: {
+        ...contextExtensions,
+        deploymentVersionId,
+      },
     })
 
     // Set up logging on the executor
@@ -420,6 +429,7 @@ export async function executeWorkflow(
           metadata: {
             waitBlockInfo: result.metadata?.waitBlockInfo,
             isDeployedContext: true,
+            deploymentVersionId,
           },
         })
         logger.info(`[${requestId}] Successfully persisted paused execution state`)
