@@ -161,6 +161,13 @@ export class Executor {
             isResuming?: boolean
             // Resume input data (for webhook resume)
             resumeInput?: any
+            // Parent execution info for child workflows
+            parentExecutionInfo?: {
+              workflowId: string
+              executionId?: string
+              blockId: string
+              deploymentVersionId?: string | null
+            }
           }
         },
     private initialBlockStates: Record<string, BlockOutput> = {},
@@ -1176,6 +1183,11 @@ export class Executor {
     // Add deployment version ID if available
     if (this.contextExtensions.deploymentVersionId) {
       ;(context as any).deploymentVersionId = this.contextExtensions.deploymentVersionId
+    }
+    
+    // Add parent execution info if this is a child workflow
+    if (this.contextExtensions.parentExecutionInfo) {
+      ;(context as any).parentExecutionInfo = this.contextExtensions.parentExecutionInfo
     }
 
     Object.entries(this.initialBlockStates).forEach(([blockId, output]) => {

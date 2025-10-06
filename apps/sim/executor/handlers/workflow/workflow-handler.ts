@@ -63,6 +63,13 @@ export class WorkflowBlockHandler implements BlockHandler {
       throw new Error('No workflow selected for execution')
     }
 
+    // Check if this workflow block already executed (e.g., parent resumed after child completed)
+    const blockState = context.blockStates.get(block.id)
+    if (blockState?.executed && blockState?.output?.childWorkflowId === workflowId) {
+      logger.info(`Workflow block ${block.id} already executed for workflow ${workflowId}, returning cached result`)
+      return blockState.output
+    }
+
     try {
       // Check execution depth
       const currentDepth = (context.workflowId?.split('_sub_').length || 1) - 1
@@ -130,6 +137,15 @@ export class WorkflowBlockHandler implements BlockHandler {
           isChildExecution: true, // Prevent child executor from managing global state
           // Propagate deployed context down to child execution so nested children obey constraints
           isDeployedContext: context.isDeployedContext === true,
+          // Pass parent's deployment version ID to child
+          deploymentVersionId: (context as any).deploymentVersionId,
+          // Store parent execution info for potential resume scenarios
+          parentExecutionInfo: {
+            workflowId: context.workflowId,
+            executionId: context.executionId,
+            blockId: block.id, // The workflow block that initiated this child execution
+            deploymentVersionId: (context as any).deploymentVersionId,
+          },
         },
       })
 
@@ -139,6 +155,32 @@ export class WorkflowBlockHandler implements BlockHandler {
       const result = await subExecutor.execute(workflowId)
       const executionResult = this.toExecutionResult(result)
       const duration = performance.now() - startTime
+
+      // Check if child workflow paused
+      const childContext = (subExecutor as any).currentContext
+      const resultMetadata = 'metadata' in result ? result.metadata : undefined
+      if (childContext && ((childContext as any).shouldPauseAfterBlock || resultMetadata?.isPaused)) {
+        logger.info(`Child workflow ${childWorkflowName} paused, parent workflow must also pause`)
+        
+        // Propagate the pause up to the parent workflow
+        ;(context as any).shouldPauseAfterBlock = true
+        ;(context as any).pauseReason = 'child_workflow_paused'
+        ;(context as any).childWorkflowPauseInfo = {
+          childWorkflowId: workflowId,
+          childWorkflowName,
+          childExecutionId: childContext.executionId,
+          parentBlockId: block.id,
+        }
+        
+        // Return a special output indicating the child workflow paused
+        return {
+          success: true,
+          childWorkflowName,
+          childWorkflowId: workflowId,
+          paused: true,
+          message: `Child workflow "${childWorkflowName}" paused and will resume later`,
+        } as Record<string, any>
+      }
 
       logger.info(`Child workflow ${childWorkflowName} completed in ${Math.round(duration)}ms`)
 
