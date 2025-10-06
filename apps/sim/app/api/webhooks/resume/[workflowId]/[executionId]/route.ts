@@ -5,6 +5,7 @@ import { workflow as workflowTable } from '@sim/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { createLogger } from '@/lib/logs/console/logger'
 import { pauseResumeService } from '@/lib/execution/pause-resume-service'
+import { executionRegistry } from '@/lib/execution/execution-registry'
 import { Executor } from '@/executor'
 import type { ExecutionResult, ExecutionContext } from '@/executor/types'
 import { parseWebhookBody } from '@/lib/webhooks/processor'
@@ -130,6 +131,36 @@ export async function POST(
       resumeInputKeys: Object.keys(resumeInput || {}),
       rawBodyLength: rawBody?.length,
     })
+
+    // NEW: First try to wake up a sleeping execution via execution registry
+    logger.info(`[${requestId}] Checking if execution is waiting in registry`, { executionId })
+    
+    const waitInfo = await executionRegistry.getWaitInfo(executionId)
+    if (waitInfo) {
+      logger.info(`[${requestId}] Found waiting execution in registry, waking it up`, {
+        executionId,
+        workflowId: waitInfo.workflowId,
+      })
+      
+      // Wake up the sleeping thread
+      const resumed = await executionRegistry.resumeExecution(executionId, resumeInput)
+      
+      if (resumed) {
+        logger.info(`[${requestId}] Successfully woke up sleeping execution`, { executionId })
+        
+        // Return success - the sleeping thread will handle the rest
+        return NextResponse.json({
+          success: true,
+          message: 'Execution resume signal sent',
+          executionId,
+        })
+      } else {
+        logger.warn(`[${requestId}] Failed to wake up execution, it may have timed out`, { executionId })
+        // Continue to DB-based resume as fallback
+      }
+    } else {
+      logger.info(`[${requestId}] Execution not found in registry, checking DB for paused state`, { executionId })
+    }
 
     // Check if workflow exists
     logger.info(`[${requestId}] Checking if workflow exists: ${workflowId}`)

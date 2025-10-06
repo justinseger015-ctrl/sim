@@ -7,6 +7,22 @@ import { retryWithExponentialBackoff } from '@/lib/knowledge/documents/utils'
 
 const logger = createLogger('WaitBlockHandler')
 
+// Server-side only import for execution registry
+let executionRegistry: any = null
+const getExecutionRegistry = async () => {
+  if (typeof window !== 'undefined') return null
+  if (!executionRegistry) {
+    try {
+      const module = await import('@/lib/execution/execution-registry')
+      executionRegistry = module.executionRegistry
+    } catch (error) {
+      logger.error('Failed to import execution registry', { error })
+      return null
+    }
+  }
+  return executionRegistry
+}
+
 // Helper function to sleep for a specified number of milliseconds with cancellation support
 const sleep = async (ms: number, checkCancelled?: () => boolean): Promise<boolean> => {
   const chunkMs = 100 // Check every 100ms
@@ -122,12 +138,12 @@ export class WaitBlockHandler implements BlockHandler {
     
     // Handle webhook-based wait (using pause mechanism)
     if (resumeTriggerType === 'webhook') {
-      // Check if we're resuming from a webhook trigger
+      // Check if we're resuming from a webhook trigger (old DB-based resume)
       const isResuming = (context as any).isResuming
       const resumeInput = (context as any).resumeInput
       
       if (isResuming) {
-        logger.info(`Wait block resumed via webhook`, {
+        logger.info(`Wait block resumed via webhook (DB-based)`, {
           blockId: block.id,
           hasResumeInput: !!resumeInput,
         })
@@ -142,48 +158,6 @@ export class WaitBlockHandler implements BlockHandler {
         }
       }
       
-      // Build trigger configuration
-      const triggerConfig: Record<string, any> = {
-        type: 'webhook',
-        webhookSecret: inputs.webhookSecret || '',
-      }
-
-      logger.info(`Wait block configured with webhook trigger`, {
-        blockId: block.id,
-        triggerConfig,
-      })
-
-      // Store wait block information in context metadata
-      if (!context.metadata) {
-        logger.warn('Context metadata missing, initializing new metadata object')
-        context.metadata = { duration: 0 }
-      }
-
-      // Add wait block information to metadata
-      const waitBlockInfo = {
-        blockId: block.id,
-        blockName: block.metadata?.name || 'Wait',
-        pausedAt,
-        description: '',
-        triggerConfig,
-      }
-
-      // Store in context for the pause handler to access
-      logger.info('Wait block setting waitBlockInfo on context')
-      if (!(context as any).waitBlockInfo) {
-        (context as any).waitBlockInfo = waitBlockInfo
-      }
-
-      // Mark that execution should pause
-      logger.info('Wait block marking context to pause')
-      ;(context as any).shouldPauseAfterBlock = true
-      ;(context as any).pauseReason = 'wait_block'
-
-      logger.info(`Wait block will pause execution after this block completes`, {
-        blockId: block.id,
-        blockName: block.metadata?.name,
-      })
-
       // Generate resume URL for webhook trigger
       const executionId = context.executionId
       const workflowId = context.workflowId
@@ -217,6 +191,12 @@ export class WaitBlockHandler implements BlockHandler {
       }
       const blockState = context.blockStates.get(block.id)!
       blockState.output = waitOutput as any
+
+      // Build trigger configuration first
+      const triggerConfig: Record<string, any> = {
+        type: 'webhook',
+        webhookSecret: inputs.webhookSecret || '',
+      }
 
       // Send webhook notification if configured
       let webhookSent = false
@@ -435,7 +415,129 @@ export class WaitBlockHandler implements BlockHandler {
         }
       }
 
-      // Return output that indicates this is a wait block
+      // For deployed contexts (server-side executions), use execution registry to sleep
+      if (context.isDeployedContext && executionId && workflowId) {
+        logger.info('Wait block entering sleep mode (deployed context)', {
+          executionId,
+          workflowId,
+          blockId: block.id,
+        })
+
+        // Get execution registry (server-side only)
+        const registry = await getExecutionRegistry()
+        
+        if (registry) {
+          // Register and wait for resume
+          const resumeData = await registry.waitForResume({
+            workflowId,
+            executionId,
+            blockId: block.id,
+            pausedAt,
+            resumeUrl,
+            triggerType: 'webhook',
+            context,
+          })
+
+          const resumedAt = new Date().toISOString()
+
+          if (!resumeData) {
+            // Timeout or cancellation
+            logger.warn('Wait block timeout or cancelled', { executionId, blockId: block.id })
+            return {
+              pausedAt,
+              resumedAt,
+              triggerType: 'webhook',
+              triggerConfig,
+              resumeUrl,
+              status: 'timeout',
+              message: `Wait block timed out after 5 minutes`,
+              webhookSent,
+              webhookResponse,
+              ...(webhookError && { webhookError }),
+            }
+          }
+
+          // Check if cancelled
+          if (resumeData.cancelled) {
+            logger.info('Wait block cancelled via registry', { executionId, blockId: block.id })
+            return {
+              pausedAt,
+              resumedAt,
+              triggerType: 'webhook',
+              status: 'cancelled',
+              message: `Wait block cancelled`,
+              webhookSent,
+              webhookResponse,
+              ...(webhookError && { webhookError }),
+            }
+          }
+
+          // Successfully resumed via Redis - execution already continued!
+          // Clear any pause flags since we handled the wait ourselves
+          delete (context as any).shouldPauseAfterBlock
+          delete (context as any).pauseReason
+          delete (context as any).waitBlockInfo
+          
+          logger.info('Wait block successfully resumed via Redis', {
+            executionId,
+            blockId: block.id,
+            hasResumeData: !!resumeData,
+          })
+
+          return {
+            pausedAt,
+            resumedAt,
+            triggerType: 'webhook',
+            triggerConfig,
+            resumeUrl,
+            resumeInput: resumeData || {},
+            status: 'resumed',
+            message: `Workflow resumed via webhook`,
+            webhookSent,
+            webhookResponse,
+            ...(webhookError && { webhookError }),
+          }
+        } else {
+          logger.warn('Execution registry not available, falling back to pause mechanism')
+          // Fall through to old pause mechanism below
+        }
+      }
+
+      // For non-deployed contexts (manual executions) or if registry not available,
+      // use the old pause mechanism (save to DB)
+      logger.info('Wait block using pause mechanism (non-deployed or registry unavailable)', {
+        isDeployedContext: context.isDeployedContext,
+        executionId,
+      })
+
+      // Store wait block information in context metadata for DB pause
+      if (!context.metadata) {
+        logger.warn('Context metadata missing, initializing new metadata object')
+        context.metadata = { duration: 0 }
+      }
+
+      // Add wait block information to metadata
+      const waitBlockInfo = {
+        blockId: block.id,
+        blockName: block.metadata?.name || 'Wait',
+        pausedAt,
+        description: '',
+        triggerConfig,
+      }
+
+      // Store in context for the pause handler to access
+      ;(context as any).waitBlockInfo = waitBlockInfo
+
+      // Mark that execution should pause (only for DB-based pause)
+      ;(context as any).shouldPauseAfterBlock = true
+      ;(context as any).pauseReason = 'wait_block'
+
+      logger.info(`Wait block will pause execution after this block completes`, {
+        blockId: block.id,
+        blockName: block.metadata?.name,
+      })
+
+      // Return output that indicates this is a wait block (old pause mechanism)
       return {
         pausedAt,
         triggerType: 'webhook',
