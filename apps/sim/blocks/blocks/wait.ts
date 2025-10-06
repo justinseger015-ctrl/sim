@@ -24,53 +24,38 @@ export const WaitBlock: BlockConfig = {
   subBlocks: [
     {
       id: 'resumeTriggerType',
-      title: 'Resume Trigger',
+      title: 'Resume Type',
       type: 'dropdown',
       layout: 'full',
       description: 'Select how this workflow should be resumed after pausing',
       options: [
-        { label: 'Manual', id: 'manual' },
-        { label: 'API', id: 'api' },
-        { label: 'Webhook', id: 'webhook' },
-        { label: 'Schedule', id: 'schedule' },
-        { label: 'Input Form', id: 'input' },
+        { label: 'After Time Interval', id: 'time' },
+        { label: 'On Webhook Call', id: 'webhook' },
       ],
-      value: () => 'manual',
+      value: () => 'time',
+    },
+    // Time interval configuration
+    {
+      id: 'timeValue',
+      title: 'Wait Amount',
+      type: 'short-input',
+      layout: 'half',
+      description: 'How long to wait (max 5 minutes)',
+      placeholder: '10',
+      value: () => '10',
+      condition: { field: 'resumeTriggerType', value: 'time' },
     },
     {
-      id: 'description',
-      title: 'Description',
-      type: 'long-input',
-      layout: 'full',
-      description: 'Optional description of why execution is paused and what should trigger resumption',
-      placeholder: 'E.g., "Waiting for manual approval" or "Waiting for external webhook callback"',
-    },
-    // Manual trigger - show resume button in block UI
-    {
-      id: 'waitStatus',
-      title: 'Resume Status',
-      type: 'wait-status',
-      layout: 'full',
-      description: 'Current pause/resume status and controls',
-      condition: { field: 'resumeTriggerType', value: 'manual' },
-    },
-    // Input Form trigger configuration
-    {
-      id: 'inputInputFormat',
-      title: 'Input Format',
-      type: 'input-format',
-      layout: 'full',
-      description: 'Define the input schema for resuming with an input form',
-      condition: { field: 'resumeTriggerType', value: 'input' },
-    },
-    // API trigger configuration
-    {
-      id: 'apiInputFormat',
-      title: 'API Input Format',
-      type: 'input-format',
-      layout: 'full',
-      description: 'Define the JSON input schema for resuming via API',
-      condition: { field: 'resumeTriggerType', value: 'api' },
+      id: 'timeUnit',
+      title: 'Unit',
+      type: 'dropdown',
+      layout: 'half',
+      options: [
+        { label: 'Seconds', id: 'seconds' },
+        { label: 'Minutes', id: 'minutes' },
+      ],
+      value: () => 'seconds',
+      condition: { field: 'resumeTriggerType', value: 'time' },
     },
     // Webhook configuration
     {
@@ -99,148 +84,6 @@ export const WaitBlock: BlockConfig = {
       description: 'Define the JSON input schema expected from the webhook',
       condition: { field: 'resumeTriggerType', value: 'webhook' },
     },
-    // Schedule configuration
-    {
-      id: 'scheduleType',
-      title: 'Schedule Type',
-      type: 'dropdown',
-      layout: 'full',
-      options: [
-        { label: 'Every X Minutes', id: 'minutes' },
-        { label: 'Hourly', id: 'hourly' },
-        { label: 'Daily', id: 'daily' },
-        { label: 'Weekly', id: 'weekly' },
-        { label: 'Monthly', id: 'monthly' },
-        { label: 'Custom Cron', id: 'custom' },
-      ],
-      value: () => 'daily',
-      condition: { field: 'resumeTriggerType', value: 'schedule' },
-    },
-    {
-      id: 'minutesInterval',
-      title: 'Interval (minutes)',
-      type: 'short-input',
-      layout: 'full',
-      placeholder: '5',
-      condition: {
-        field: 'resumeTriggerType',
-        value: 'schedule',
-        and: { field: 'scheduleType', value: 'minutes' },
-      },
-    },
-    {
-      id: 'hourlyMinute',
-      title: 'Minute (0-59)',
-      type: 'short-input',
-      layout: 'full',
-      placeholder: '0',
-      condition: {
-        field: 'resumeTriggerType',
-        value: 'schedule',
-        and: { field: 'scheduleType', value: 'hourly' },
-      },
-    },
-    {
-      id: 'dailyTime',
-      title: 'Time (HH:MM)',
-      type: 'short-input',
-      layout: 'full',
-      placeholder: '09:00',
-      condition: {
-        field: 'resumeTriggerType',
-        value: 'schedule',
-        and: { field: 'scheduleType', value: 'daily' },
-      },
-    },
-    {
-      id: 'weeklyDay',
-      title: 'Day of Week',
-      type: 'dropdown',
-      layout: 'full',
-      options: [
-        { label: 'Monday', id: 'MON' },
-        { label: 'Tuesday', id: 'TUE' },
-        { label: 'Wednesday', id: 'WED' },
-        { label: 'Thursday', id: 'THU' },
-        { label: 'Friday', id: 'FRI' },
-        { label: 'Saturday', id: 'SAT' },
-        { label: 'Sunday', id: 'SUN' },
-      ],
-      value: () => 'MON',
-      condition: {
-        field: 'resumeTriggerType',
-        value: 'schedule',
-        and: { field: 'scheduleType', value: 'weekly' },
-      },
-    },
-    {
-      id: 'weeklyTime',
-      title: 'Time (HH:MM)',
-      type: 'short-input',
-      layout: 'full',
-      placeholder: '09:00',
-      condition: {
-        field: 'resumeTriggerType',
-        value: 'schedule',
-        and: { field: 'scheduleType', value: 'weekly' },
-      },
-    },
-    {
-      id: 'monthlyDay',
-      title: 'Day of Month (1-31)',
-      type: 'short-input',
-      layout: 'full',
-      placeholder: '1',
-      condition: {
-        field: 'resumeTriggerType',
-        value: 'schedule',
-        and: { field: 'scheduleType', value: 'monthly' },
-      },
-    },
-    {
-      id: 'monthlyTime',
-      title: 'Time (HH:MM)',
-      type: 'short-input',
-      layout: 'full',
-      placeholder: '09:00',
-      condition: {
-        field: 'resumeTriggerType',
-        value: 'schedule',
-        and: { field: 'scheduleType', value: 'monthly' },
-      },
-    },
-    {
-      id: 'cronExpression',
-      title: 'Cron Expression',
-      type: 'short-input',
-      layout: 'full',
-      placeholder: '0 9 * * *',
-      condition: {
-        field: 'resumeTriggerType',
-        value: 'schedule',
-        and: { field: 'scheduleType', value: 'custom' },
-      },
-    },
-    {
-      id: 'scheduleTimezone',
-      title: 'Timezone',
-      type: 'dropdown',
-      layout: 'full',
-      options: [
-        { label: 'UTC', id: 'UTC' },
-        { label: 'US Eastern', id: 'America/New_York' },
-        { label: 'US Central', id: 'America/Chicago' },
-        { label: 'US Mountain', id: 'America/Denver' },
-        { label: 'US Pacific', id: 'America/Los_Angeles' },
-        { label: 'London', id: 'Europe/London' },
-        { label: 'Paris', id: 'Europe/Paris' },
-        { label: 'Singapore', id: 'Asia/Singapore' },
-        { label: 'Tokyo', id: 'Asia/Tokyo' },
-        { label: 'Sydney', id: 'Australia/Sydney' },
-      ],
-      value: () => 'UTC',
-      condition: { field: 'resumeTriggerType', value: 'schedule' },
-    },
   ],
   tools: {
     access: [],
@@ -248,19 +91,15 @@ export const WaitBlock: BlockConfig = {
   inputs: {
     resumeTriggerType: {
       type: 'string',
-      description: 'Type of trigger to resume execution',
+      description: 'Type of trigger to resume execution (time or webhook)',
     },
-    description: {
+    timeValue: {
       type: 'string',
-      description: 'Description of why execution is paused',
+      description: 'Wait duration value',
     },
-    inputInputFormat: {
-      type: 'json',
-      description: 'Input format for input form trigger',
-    },
-    apiInputFormat: {
-      type: 'json',
-      description: 'Input format for API trigger',
+    timeUnit: {
+      type: 'string',
+      description: 'Wait duration unit (seconds or minutes)',
     },
     webhookPath: {
       type: 'string',
@@ -274,67 +113,39 @@ export const WaitBlock: BlockConfig = {
       type: 'json',
       description: 'Input format for webhook trigger',
     },
-    scheduleType: {
-      type: 'string',
-      description: 'Schedule type (minutes, hourly, daily, etc.)',
-    },
-    minutesInterval: {
-      type: 'string',
-      description: 'Interval in minutes',
-    },
-    hourlyMinute: {
-      type: 'string',
-      description: 'Minute of the hour (0-59)',
-    },
-    dailyTime: {
-      type: 'string',
-      description: 'Time of day (HH:MM)',
-    },
-    weeklyDay: {
-      type: 'string',
-      description: 'Day of the week',
-    },
-    weeklyTime: {
-      type: 'string',
-      description: 'Time on weekly day',
-    },
-    monthlyDay: {
-      type: 'string',
-      description: 'Day of the month (1-31)',
-    },
-    monthlyTime: {
-      type: 'string',
-      description: 'Time on monthly day',
-    },
-    cronExpression: {
-      type: 'string',
-      description: 'Custom cron expression',
-    },
-    scheduleTimezone: {
-      type: 'string',
-      description: 'Timezone for schedule',
-    },
   },
   outputs: {
     pausedAt: {
       type: 'string',
-      description: 'ISO timestamp when execution was paused',
+      description: 'ISO timestamp when wait started',
     },
     resumedAt: {
       type: 'string',
-      description: 'ISO timestamp when execution was resumed (only available after resumption)',
+      description: 'ISO timestamp when wait completed (for time-based waits)',
     },
     resumeInput: {
       type: 'json',
-      description: 'Input data provided when resuming the workflow',
+      description: 'Input data provided when resuming via webhook',
     },
     triggerType: {
       type: 'string',
-      description: 'Type of trigger used to resume (manual, api, webhook, schedule)',
+      description: 'Type of trigger used (time or webhook)',
     },
     resumeUrl: {
       type: 'string',
-      description: 'Unique webhook URL to resume this specific execution (use in blocks before Wait to send to external systems)',
+      description: 'Unique webhook URL to resume this specific execution (only for webhook trigger)',
+    },
+    waitDuration: {
+      type: 'number',
+      description: 'Actual wait duration in milliseconds (only for time-based waits)',
+    },
+    status: {
+      type: 'string',
+      description: 'Status of the wait block (waiting, resumed, completed)',
+    },
+    message: {
+      type: 'string',
+      description: 'Human-readable status message',
     },
   },
 }

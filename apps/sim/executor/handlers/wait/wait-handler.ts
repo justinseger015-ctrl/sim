@@ -5,10 +5,13 @@ import { getBaseUrl } from '@/lib/urls/utils'
 
 const logger = createLogger('WaitBlockHandler')
 
+// Helper function to sleep for a specified number of milliseconds
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
 /**
  * Handler for Wait blocks that pause workflow execution.
- * When a Wait block is executed, it triggers a workflow pause and saves
- * the execution state along with resume trigger configuration.
+ * - For time-based triggers: Actually sleeps for the specified duration
+ * - For webhook triggers: Pauses workflow and waits for external webhook call
  */
 export class WaitBlockHandler implements BlockHandler {
   canHandle(block: SerializedBlock): boolean {
@@ -22,116 +25,155 @@ export class WaitBlockHandler implements BlockHandler {
   ): Promise<any> {
     logger.info(`Executing Wait block: ${block.id}`, { inputs })
 
-    const resumeTriggerType = inputs.resumeTriggerType || 'manual'
-    const description = inputs.description || ''
+    const resumeTriggerType = inputs.resumeTriggerType || 'time'
     const pausedAt = new Date().toISOString()
 
-    // Build trigger configuration based on resume type
-    const triggerConfig: Record<string, any> = {
-      type: resumeTriggerType,
-      description,
+    // Handle time-based wait
+    if (resumeTriggerType === 'time') {
+      const timeValue = parseInt(inputs.timeValue || '10', 10)
+      const timeUnit = inputs.timeUnit || 'seconds'
+      
+      // Calculate wait time in milliseconds
+      let waitMs = timeValue * 1000 // Default to seconds
+      if (timeUnit === 'minutes') {
+        waitMs = timeValue * 60 * 1000
+      }
+      
+      // Enforce 5-minute maximum (300,000 ms)
+      const maxWaitMs = 5 * 60 * 1000
+      if (waitMs > maxWaitMs) {
+        logger.warn(`Wait time ${waitMs}ms exceeds maximum of 5 minutes, capping to 5 minutes`)
+        waitMs = maxWaitMs
+      }
+      
+      logger.info(`Waiting for ${waitMs}ms (${timeValue} ${timeUnit})`)
+      
+      // Actually sleep for the specified duration
+      await sleep(waitMs)
+      
+      const resumedAt = new Date().toISOString()
+      
+      return {
+        pausedAt,
+        resumedAt,
+        triggerType: 'time',
+        waitDuration: waitMs,
+        status: 'resumed',
+        message: `Waited for ${timeValue} ${timeUnit}`,
+      }
+    }
+    
+    // Handle webhook-based wait (using pause mechanism)
+    if (resumeTriggerType === 'webhook') {
+      // Build trigger configuration
+      const triggerConfig: Record<string, any> = {
+        type: 'webhook',
+        webhookPath: inputs.webhookPath || '',
+        webhookSecret: inputs.webhookSecret || '',
+        inputFormat: inputs.webhookInputFormat || [],
+      }
+
+      logger.info(`Wait block configured with webhook trigger`, {
+        blockId: block.id,
+        triggerConfig,
+      })
+
+      // Store wait block information in context metadata
+      if (!context.metadata) {
+        logger.warn('Context metadata missing, initializing new metadata object')
+        context.metadata = { duration: 0 }
+      }
+
+      // Add wait block information to metadata
+      const waitBlockInfo = {
+        blockId: block.id,
+        blockName: block.metadata?.name || 'Wait',
+        pausedAt,
+        description: '',
+        triggerConfig,
+      }
+
+      // Store in context for the pause handler to access
+      logger.info('Wait block setting waitBlockInfo on context')
+      if (!(context as any).waitBlockInfo) {
+        (context as any).waitBlockInfo = waitBlockInfo
+      }
+
+      // Mark that execution should pause
+      logger.info('Wait block marking context to pause')
+      ;(context as any).shouldPauseAfterBlock = true
+      ;(context as any).pauseReason = 'wait_block'
+
+      logger.info(`Wait block will pause execution after this block completes`, {
+        blockId: block.id,
+        blockName: block.metadata?.name,
+      })
+
+      // Generate resume URL for webhook trigger
+      const executionId = context.executionId
+      const workflowId = context.workflowId
+      const baseUrl = getBaseUrl()
+      const resumeUrl = executionId && workflowId 
+        ? `${baseUrl}/api/webhooks/resume/${workflowId}/${executionId}`
+        : undefined
+
+      logger.info('Wait block resumeUrl generated', {
+        resumeUrl,
+        executionId,
+        workflowId,
+        isDeployed: context.isDeployedContext,
+      })
+
+      // Return output that indicates this is a wait block
+      return {
+        pausedAt,
+        triggerType: 'webhook',
+        triggerConfig,
+        resumeUrl,
+        status: 'waiting',
+        message: `Workflow paused at ${block.metadata?.name || 'Wait block'}. Resume via webhook call.`,
+      }
     }
 
-    // Add trigger-specific configuration
-    if (resumeTriggerType === 'input') {
-      triggerConfig.inputFormat = inputs.inputInputFormat || []
-    } else if (resumeTriggerType === 'api') {
-      triggerConfig.inputFormat = inputs.apiInputFormat || []
-    } else if (resumeTriggerType === 'webhook') {
-      triggerConfig.webhookPath = inputs.webhookPath || ''
-      triggerConfig.webhookSecret = inputs.webhookSecret || ''
-      triggerConfig.inputFormat = inputs.webhookInputFormat || []
-    } else if (resumeTriggerType === 'schedule') {
-      triggerConfig.scheduleType = inputs.scheduleType || 'daily'
-      triggerConfig.minutesInterval = inputs.minutesInterval
-      triggerConfig.hourlyMinute = inputs.hourlyMinute
-      triggerConfig.dailyTime = inputs.dailyTime
-      triggerConfig.weeklyDay = inputs.weeklyDay
-      triggerConfig.weeklyTime = inputs.weeklyTime
-      triggerConfig.monthlyDay = inputs.monthlyDay
-      triggerConfig.monthlyTime = inputs.monthlyTime
-      triggerConfig.cronExpression = inputs.cronExpression
-      triggerConfig.timezone = inputs.scheduleTimezone || 'UTC'
+    // For user_approval blocks, always use the manual pause mechanism
+    if (block.metadata?.id === 'user_approval') {
+      const triggerConfig: Record<string, any> = {
+        type: 'manual',
+        description: '',
+      }
+
+      // Store wait block information
+      if (!context.metadata) {
+        context.metadata = { duration: 0 }
+      }
+
+      const waitBlockInfo = {
+        blockId: block.id,
+        blockName: block.metadata?.name || 'User Approval',
+        pausedAt,
+        description: '',
+        triggerConfig,
+      }
+
+      ;(context as any).waitBlockInfo = waitBlockInfo
+      ;(context as any).shouldPauseAfterBlock = true
+      ;(context as any).pauseReason = 'wait_block'
+
+      return {
+        pausedAt,
+        triggerType: 'manual',
+        triggerConfig,
+        status: 'waiting',
+        message: `Workflow paused at ${block.metadata?.name || 'User Approval block'}. Resume via manual trigger.`,
+      }
     }
 
-    logger.info(`Wait block configured with ${resumeTriggerType} trigger`, {
-      blockId: block.id,
-      triggerConfig,
-    })
-
-    // Store wait block information in context metadata
-    // This will be saved when the workflow is paused
-    logger.info('Wait block preparing context metadata', {
-      hasMetadata: Boolean(context.metadata),
-      metadataKeys: context.metadata ? Object.keys(context.metadata) : undefined,
-    })
-
-    if (!context.metadata) {
-      logger.warn('Context metadata missing, initializing new metadata object')
-      context.metadata = { duration: 0 }
-    }
-
-    logger.info('Wait block metadata after ensure', {
-      metadataKeys: Object.keys(context.metadata || {}),
-    })
-
-    // Add wait block information to metadata
-    const waitBlockInfo = {
-      blockId: block.id,
-      blockName: block.metadata?.name || 'Wait',
-      pausedAt,
-      description,
-      triggerConfig,
-    }
-
-    // Store in context for the pause handler to access
-    logger.info('Wait block setting waitBlockInfo on context')
-    if (!(context as any).waitBlockInfo) {
-      (context as any).waitBlockInfo = waitBlockInfo
-    }
-    logger.info('Wait block waitBlockInfo set', {
-      waitBlockInfo: (context as any).waitBlockInfo,
-    })
-
-    // Mark that execution should pause
-    // We use a special marker in the context that the executor will check
-    logger.info('Wait block marking context to pause')
-    ;(context as any).shouldPauseAfterBlock = true
-    ;(context as any).pauseReason = 'wait_block'
-    logger.info('Wait block marked context pause flags', {
-      shouldPause: (context as any).shouldPauseAfterBlock,
-      pauseReason: (context as any).pauseReason,
-    })
-
-    logger.info(`Wait block will pause execution after this block completes`, {
-      blockId: block.id,
-      blockName: block.metadata?.name,
-    })
-
-    // Generate resume URL for webhook trigger
-    const executionId = context.executionId
-    const workflowId = context.workflowId
-    const baseUrl = getBaseUrl()
-    const resumeUrl = executionId && workflowId 
-      ? `${baseUrl}/api/webhooks/resume/${workflowId}/${executionId}`
-      : undefined
-
-    logger.info('Wait block resumeUrl generated', {
-      resumeUrl,
-      executionId,
-      workflowId,
-      isDeployed: context.isDeployedContext,
-    })
-
-    // Return output that indicates this is a wait block
+    // Default fallback
     return {
       pausedAt,
       triggerType: resumeTriggerType,
-      triggerConfig,
-      resumeUrl,
-      status: 'waiting',
-      message: description || `Workflow paused at ${block.metadata?.name || 'Wait block'}. Resume via ${resumeTriggerType} trigger.`,
+      status: 'completed',
+      message: `Wait block completed with trigger type: ${resumeTriggerType}`,
     }
   }
 }
-
