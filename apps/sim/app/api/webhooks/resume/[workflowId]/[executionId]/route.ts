@@ -9,6 +9,9 @@ import { Executor } from '@/executor'
 import type { ExecutionResult, ExecutionContext } from '@/executor/types'
 import { parseWebhookBody } from '@/lib/webhooks/processor'
 import { generateRequestId } from '@/lib/utils'
+import { LoggingSession } from '@/lib/logs/execution/logging-session'
+import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
+import { updateWorkflowRunCounts } from '@/lib/workflows/utils'
 
 const logger = createLogger('WebhookResumeAPI')
 
@@ -239,7 +242,17 @@ export async function POST(
     let context: ExecutionContext
     let preResumeExecutedBlocks: Set<string>
     
+    // Create logging session for resumed execution
+    const loggingSession = new LoggingSession(workflowId, executionId, 'webhook', requestId)
+    
     try {
+      // Start logging session
+      await loggingSession.safeStart({
+        userId: workflowData.userId,
+        workspaceId: workflowData.workspaceId || undefined,
+        variables: resumeData.environmentVariables || {},
+      })
+      
       const executorData = Executor.createFromPausedState(
         resumeData.workflowState,
         resumeData.executionContext,
@@ -265,6 +278,9 @@ export async function POST(
         blockStatesCount: context.blockStates?.size || 0,
       })
 
+      // Set up logging on the executor
+      loggingSession.setupExecutor(executor)
+
       // Track which blocks were already executed before resume
       preResumeExecutedBlocks = new Set(context.executedBlocks)
 
@@ -288,6 +304,17 @@ export async function POST(
         name: executorError.name,
         phase: 'executor_creation',
       })
+      
+      // Complete logging session with error
+      await loggingSession.safeCompleteWithError({
+        endedAt: new Date().toISOString(),
+        totalDurationMs: Date.now() - startTime,
+        error: {
+          message: executorError.message || 'Failed to resume workflow execution',
+          stackTrace: executorError.stack || '',
+        },
+      })
+      
       throw executorError
     }
 
@@ -348,6 +375,33 @@ export async function POST(
     }
 
     const duration = Date.now() - startTime
+
+    // Build trace spans from execution result (works for both success and failure)
+    const { traceSpans, totalDuration } = buildTraceSpans(executionResult)
+
+    // Update workflow run counts if execution was successful
+    if (executionResult.success) {
+      await updateWorkflowRunCounts(workflowId)
+    }
+
+    // Complete logging session
+    if (executionResult.success || isPaused) {
+      await loggingSession.safeComplete({
+        endedAt: new Date().toISOString(),
+        totalDurationMs: totalDuration || duration,
+        finalOutput: executionResult.output || {},
+        traceSpans: (traceSpans || []) as any,
+      })
+    } else {
+      await loggingSession.safeCompleteWithError({
+        endedAt: new Date().toISOString(),
+        totalDurationMs: totalDuration || duration,
+        error: {
+          message: executionResult.error || 'Workflow execution failed',
+          stackTrace: '',
+        },
+      })
+    }
 
     logger.info(`[${requestId}] Webhook resume completed for ${executionId}`, {
       success: executionResult.success,
