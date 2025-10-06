@@ -869,7 +869,8 @@ export class Executor {
       }
     } finally {
       // Only reset global state for parent executions
-      if (!this.isChildExecution && !this.isDebugging) {
+      // Don't reset when paused - we need the executor and executionId in store for resume
+      if (!this.isChildExecution && !this.isDebugging && !this.isPaused) {
         reset()
       }
     }

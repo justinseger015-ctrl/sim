@@ -1,6 +1,7 @@
 import { createLogger } from '@/lib/logs/console/logger'
 import type { BlockHandler, ExecutionContext } from '@/executor/types'
 import type { SerializedBlock } from '@/serializer/types'
+import { getBaseUrl } from '@/lib/urls/utils'
 
 const logger = createLogger('WaitBlockHandler')
 
@@ -107,11 +108,27 @@ export class WaitBlockHandler implements BlockHandler {
       blockName: block.metadata?.name,
     })
 
+    // Generate resume URL for webhook trigger
+    const executionId = context.executionId
+    const workflowId = context.workflowId
+    const baseUrl = getBaseUrl()
+    const resumeUrl = executionId && workflowId 
+      ? `${baseUrl}/api/webhooks/resume/${workflowId}/${executionId}`
+      : undefined
+
+    logger.info('Wait block resumeUrl generated', {
+      resumeUrl,
+      executionId,
+      workflowId,
+      isDeployed: context.isDeployedContext,
+    })
+
     // Return output that indicates this is a wait block
     return {
       pausedAt,
       triggerType: resumeTriggerType,
       triggerConfig,
+      resumeUrl,
       status: 'waiting',
       message: description || `Workflow paused at ${block.metadata?.name || 'Wait block'}. Resume via ${resumeTriggerType} trigger.`,
     }

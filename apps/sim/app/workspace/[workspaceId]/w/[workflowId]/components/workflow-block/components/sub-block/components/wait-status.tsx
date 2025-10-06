@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { createLogger } from '@/lib/logs/console/logger'
 import { useExecutionStore } from '@/stores/execution/store'
 import { useConsoleStore } from '@/stores/panel/console/store'
@@ -18,14 +18,44 @@ interface PausedExecutionInfo {
 }
 
 export function WaitStatus({ blockId, isPreview, disabled }: WaitStatusProps) {
-  const { executionId, workflowId, isExecuting, setIsExecuting, setActiveBlocks, setExecutionIdentifiers } = useExecutionStore((state) => state)
+  const executionId = useExecutionStore((state) => state.executionId)
+  const workflowId = useExecutionStore((state) => state.workflowId)
+  const isExecuting = useExecutionStore((state) => state.isExecuting)
+  const executor = useExecutionStore((state) => state.executor)
+  const pausedContext = useExecutionStore((state) => state.pausedContext)
+  const setIsExecuting = useExecutionStore((state) => state.setIsExecuting)
+  const setActiveBlocks = useExecutionStore((state) => state.setActiveBlocks)
+  const setExecutionIdentifiers = useExecutionStore((state) => state.setExecutionIdentifiers)
+  const setExecutor = useExecutionStore((state) => state.setExecutor)
+  const setPausedContext = useExecutionStore((state) => state.setPausedContext)
+  
   const { addConsole, toggleConsole } = useConsoleStore()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pausedInfo, setPausedInfo] = useState<PausedExecutionInfo | null>(null)
   const [isResuming, setIsResuming] = useState(false)
   
-  logger.info('WaitStatus render', { blockId, executionId, workflowId, isPreview, isExecuting, disabled })
+  // Check if we have an in-memory paused executor (manual execution)
+  const isPausedInMemory = useMemo(() => {
+    if (isPreview || !executor || !executionId || !pausedContext) {
+      return false
+    }
+    
+    // Check if THIS block is the one that caused the pause
+    const waitBlockInfo = (pausedContext.metadata as any)?.waitBlockInfo
+    const isPausedAtThisBlock = waitBlockInfo?.blockId === blockId
+    
+    logger.info('isPausedInMemory check', { 
+      blockId, 
+      hasExecutor: !!executor, 
+      hasExecutionId: !!executionId, 
+      hasPausedContext: !!pausedContext,
+      waitBlockId: waitBlockInfo?.blockId,
+      isPausedAtThisBlock,
+    })
+    
+    return isPausedAtThisBlock
+  }, [isPreview, executor, executionId, pausedContext, blockId])
 
   const canInteract = useMemo(() => !isPreview && !!executionId && !!workflowId, [
     isPreview,
@@ -33,8 +63,8 @@ export function WaitStatus({ blockId, isPreview, disabled }: WaitStatusProps) {
     workflowId,
   ])
 
-  const fetchPausedInfo = useCallback(async () => {
-    if (isPreview || !workflowId) return
+  const fetchPausedInfo = useCallback(async (): Promise<boolean> => {
+    if (isPreview || !workflowId) return false
     logger.info('Fetching paused info', { workflowId, executionId, blockId })
     try {
       setIsLoading(true)
@@ -88,7 +118,7 @@ export function WaitStatus({ blockId, isPreview, disabled }: WaitStatusProps) {
           executionId,
         })
         setPausedInfo(null)
-        return
+        return false
       }
 
       const metadata = currentExecution.metadata as { waitBlockInfo?: any } | undefined
@@ -111,15 +141,78 @@ export function WaitStatus({ blockId, isPreview, disabled }: WaitStatusProps) {
           isResuming: false,
         })
       }
+      return true
     } catch (err: any) {
       logger.error('Error fetching paused execution info', err)
       setError(err.message || 'Failed to fetch paused execution info')
+      return false
     } finally {
       setIsLoading(false)
     }
   }, [workflowId, executionId, blockId, isPreview, setExecutionIdentifiers])
 
   const handleResume = useCallback(async () => {
+    // For manual executions, resume from memory
+    if (isPausedInMemory && executor && pausedContext && workflowId) {
+      logger.info('Resuming from in-memory executor', { executionId })
+      
+      try {
+        setIsResuming(true)
+        setIsExecuting(true)
+        setActiveBlocks(new Set([blockId]))
+        toggleConsole()
+
+        // Resume execution from the paused context
+        executor.resume() // Clear the pause flag
+        const result = await executor.resumeFromContext(workflowId, pausedContext)
+        
+        // Handle the result
+        const executionResult = 'stream' in result && 'execution' in result ? result.execution : result
+        
+        logger.info('Manual resume completed', { success: executionResult.success, isPaused: (executionResult.metadata as any)?.isPaused })
+        
+        // Clean up: clear executor and paused context from store
+        setExecutor(null)
+        setPausedContext(null)
+        setIsExecuting(false)
+        setActiveBlocks(new Set())
+        setExecutionIdentifiers({ executionId: null, workflowId, isResuming: false })
+        setIsResuming(false)
+        
+        // Add logs to console
+        if (executionResult.logs && Array.isArray(executionResult.logs)) {
+          executionResult.logs.forEach((log: any) => {
+            addConsole({
+              input: log.input || {},
+              output: log.output || {},
+              success: log.success !== false,
+              error: log.error,
+              durationMs: log.durationMs || 0,
+              startedAt: log.startedAt || new Date().toISOString(),
+              endedAt: log.endedAt || new Date().toISOString(),
+              workflowId: workflowId,
+              blockId: log.blockId,
+              executionId: executionId || 'resumed',
+              blockName: log.blockName || 'Block',
+              blockType: log.blockType || 'unknown',
+            })
+          })
+        }
+        
+        return
+      } catch (err: any) {
+        logger.error('Error resuming from memory', err)
+        setError(err.message || 'Failed to resume execution')
+        setExecutor(null)
+        setPausedContext(null)
+        setIsExecuting(false)
+        setActiveBlocks(new Set())
+        setIsResuming(false)
+        return
+      }
+    }
+
+    // For deployed executions, resume from DB
     if (!canInteract || !pausedInfo?.executionId) {
       logger.warn('Resume attempted without paused execution info', {
         canInteract,
@@ -175,22 +268,7 @@ export function WaitStatus({ blockId, isPreview, disabled }: WaitStatusProps) {
       const data = await response.json()
       logger.info('Resume response', data)
 
-      // First add a resume started log
-      addConsole({
-        input: { action: 'resume', blockId },
-        output: { message: 'Resuming workflow execution from Wait block' },
-        success: true,
-        durationMs: 0,
-        startedAt: new Date().toISOString(),
-        endedAt: new Date().toISOString(),
-        workflowId: workflowId!,
-        blockId: blockId,
-        executionId: resumeExecutionId,
-        blockName: 'Wait',
-        blockType: 'wait',
-      })
-
-      // Add console logs for all executed blocks
+      // Add console logs for all executed blocks after resume
       if (data.logs && Array.isArray(data.logs)) {
         data.logs.forEach((log: any) => {
           addConsole({
@@ -210,32 +288,7 @@ export function WaitStatus({ blockId, isPreview, disabled }: WaitStatusProps) {
         })
       }
 
-      // Add final status log
-      const statusMessage = data.isPaused 
-        ? 'Workflow paused again at another Wait block' 
-        : data.success 
-          ? 'Workflow execution completed successfully' 
-          : `Workflow execution failed: ${data.error || 'Unknown error'}`
-      
-      addConsole({
-        input: { action: 'resume_complete' },
-        output: {
-          message: statusMessage,
-          finalOutput: data.output,
-          isPaused: data.isPaused,
-          duration: data.metadata?.duration,
-        },
-        success: data.success && !data.error,
-        error: data.error,
-        durationMs: data.metadata?.duration || 0,
-        startedAt: data.metadata?.startTime || new Date().toISOString(),
-        endedAt: data.metadata?.endTime || new Date().toISOString(),
-        workflowId: workflowId!,
-        blockId: blockId,
-        executionId: resumeExecutionId,
-        blockName: 'Wait',
-        blockType: 'wait',
-      })
+      // No need for a summary message - the console already shows all block executions
 
       // Update execution state based on result
       if (data.isPaused) {
@@ -270,47 +323,52 @@ export function WaitStatus({ blockId, isPreview, disabled }: WaitStatusProps) {
       setIsLoading(false)
     }
   }, [
+    isPausedInMemory,
+    executor,
+    pausedContext,
     canInteract,
     pausedInfo,
     workflowId,
+    executionId,
     blockId,
     fetchPausedInfo,
     setIsExecuting,
     setActiveBlocks,
     setExecutionIdentifiers,
+    setExecutor,
+    setPausedContext,
     addConsole,
     toggleConsole,
   ])
 
+  // Log when pausedContext changes to verify store updates
   useEffect(() => {
+    logger.info('pausedContext changed in store', { 
+      hasPausedContext: !!pausedContext,
+      blockId,
+      executionId,
+      isPausedInMemory 
+    })
+  }, [pausedContext, blockId, executionId, isPausedInMemory])
+
+  // Only fetch paused info for deployed executions (from DB)
+  // Manual executions use isPausedInMemory instead
+  useEffect(() => {
+    if (isPreview || isPausedInMemory) return
+    
+    // Initial fetch on mount for deployed executions
     fetchPausedInfo()
-  }, [fetchPausedInfo])
+  }, [isPreview, isPausedInMemory, fetchPausedInfo])
   
-  // Refetch paused info when executionId changes
+  // Refetch when executionId changes (for deployed executions)
   useEffect(() => {
-    if (executionId && !isPreview) {
-      logger.info('ExecutionId changed, scheduling fetch', { executionId })
-      // Add a small delay to ensure database write completes
-      const timer = setTimeout(() => {
-        fetchPausedInfo()
-      }, 200) // Reduced to 200ms for faster response
-      return () => clearTimeout(timer)
-    }
-  }, [executionId, isPreview, fetchPausedInfo])
-  
-  // Poll for paused info while executing or when we have an executionId
-  useEffect(() => {
-    if (!isPreview && workflowId && (isExecuting || executionId)) {
-      // Initial fetch
+    if (isPreview || isPausedInMemory) return
+    
+    if (executionId) {
+      logger.info('ExecutionId changed, fetching paused info from DB', { executionId })
       fetchPausedInfo()
-      
-      // Then poll
-      const interval = setInterval(() => {
-        fetchPausedInfo()
-      }, 1000) // Poll every second
-      return () => clearInterval(interval)
     }
-  }, [isExecuting, executionId, isPreview, workflowId, fetchPausedInfo])
+  }, [executionId, isPreview, isPausedInMemory, fetchPausedInfo])
 
   if (isPreview) {
     return (
@@ -322,6 +380,9 @@ export function WaitStatus({ blockId, isPreview, disabled }: WaitStatusProps) {
 
   const waitInfo = (pausedInfo?.metadata as { waitBlockInfo?: any } | undefined)?.waitBlockInfo
 
+  // Show resume button if paused (either in-memory or from DB)
+  const showResumeButton = isPausedInMemory || pausedInfo
+
   return (
     <div className="space-y-2">
       {isResuming ? (
@@ -331,11 +392,11 @@ export function WaitStatus({ blockId, isPreview, disabled }: WaitStatusProps) {
             <span className="font-medium">Resuming workflow execution...</span>
           </div>
         </div>
-      ) : pausedInfo ? (
+      ) : showResumeButton ? (
         <div className="rounded border p-3 text-sm">
           <div className="font-medium text-foreground mb-1">Workflow paused</div>
           <div className="text-muted-foreground">
-            Paused at {new Date(pausedInfo.pausedAt).toLocaleString()}.
+            {pausedInfo ? `Paused at ${new Date(pausedInfo.pausedAt).toLocaleString()}.` : 'Paused in memory.'}
           </div>
           {waitInfo?.description ? (
             <div className="text-muted-foreground">{waitInfo.description}</div>

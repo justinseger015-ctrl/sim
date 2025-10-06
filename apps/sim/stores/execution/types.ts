@@ -10,6 +10,7 @@ export interface ExecutionState {
   workflowId: string | null
   executor: Executor | null
   debugContext: ExecutionContext | null
+  pausedContext: ExecutionContext | null // Context when workflow paused (for manual resume)
   autoPanDisabled: boolean
   isResuming: boolean
 }
@@ -26,6 +27,7 @@ export interface ExecutionActions {
   setPendingBlocks: (blockIds: string[]) => void
   setExecutor: (executor: Executor | null) => void
   setDebugContext: (context: ExecutionContext | null) => void
+  setPausedContext: (context: ExecutionContext | null) => void
   setAutoPanDisabled: (disabled: boolean) => void
   reset: () => void
 }
@@ -39,6 +41,7 @@ export const initialState: ExecutionState = {
   workflowId: null,
   executor: null,
   debugContext: null,
+  pausedContext: null,
   autoPanDisabled: false,
   isResuming: false,
 }

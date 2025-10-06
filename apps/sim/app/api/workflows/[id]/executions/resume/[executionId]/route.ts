@@ -6,9 +6,9 @@ import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
 import { pauseResumeService } from '@/lib/execution/pause-resume-service'
 import { Executor } from '@/executor'
-import type { ExecutionContext } from '@/executor/types'
+import type { ExecutionContext, ExecutionResult } from '@/executor/types'
 import type { SerializedWorkflow } from '@/serializer/types'
-import { getUserEntityPermissions } from '@/lib/permissions'
+import { getUserEntityPermissions } from '@/lib/permissions/utils'
 
 const logger = createLogger('ResumeExecutionAPI')
 
@@ -81,15 +81,27 @@ export async function POST(
       }
     )
 
+    // Track which blocks were already executed before resume
+    const preResumeExecutedBlocks = new Set(context.executedBlocks)
+
     // Resume execution
     const result = await executor.resumeFromContext(workflowId, context)
 
+    // Check if we got a StreamingExecution result (with stream + execution properties)
+    // For resume, we only care about the ExecutionResult part, not the stream
+    const executionResult: ExecutionResult = 'stream' in result && 'execution' in result ? result.execution : result
+
+    // Filter logs to only include blocks executed AFTER resume (not before pause)
+    const newLogs = (executionResult.logs || []).filter(log => 
+      !preResumeExecutedBlocks.has(log.blockId)
+    )
+
     // Check if execution completed or was paused/cancelled again
-    const metadata = result.metadata as any
+    const metadata = executionResult.metadata as any
     const { context: resumedContext, ...metadataWithoutContext } = metadata || {}
     const isPaused = metadata?.isPaused
     const waitBlockInfo = metadata?.waitBlockInfo
-    const isCancelled = !result.success && result.error?.includes('cancelled')
+    const isCancelled = !executionResult.success && executionResult.error?.includes('cancelled')
 
     if (isPaused) {
       if (!resumedContext) {
@@ -130,18 +142,18 @@ export async function POST(
     }
 
     return NextResponse.json({
-      success: result.success,
-      output: result.output,
-      error: result.error,
+      success: executionResult.success,
+      output: executionResult.output,
+      error: executionResult.error,
       isPaused,
       isCancelled,
-      logs: result.logs || [],
+      logs: newLogs, // Only return logs for blocks executed after resume
       metadata: {
-        duration: result.metadata?.duration,
+        duration: executionResult.metadata?.duration,
         executedBlockCount: context.executedBlocks.size,
         waitBlockInfo,
-        startTime: result.metadata?.startTime,
-        endTime: result.metadata?.endTime,
+        startTime: executionResult.metadata?.startTime,
+        endTime: executionResult.metadata?.endTime,
       },
     })
   } catch (error: any) {

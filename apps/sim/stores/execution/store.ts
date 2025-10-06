@@ -66,6 +66,7 @@ export const useExecutionStore = create<ExecutionState & ExecutionActions>()((se
     })),
   setExecutor: (executor) => set({ executor }),
   setDebugContext: (debugContext) => set({ debugContext }),
+  setPausedContext: (pausedContext) => set({ pausedContext }),
   setAutoPanDisabled: (disabled) => set({ autoPanDisabled: disabled }),
   reset: () => set(initialState),
 }))

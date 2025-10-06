@@ -386,6 +386,10 @@ export function useWorkflowExecution() {
         const stream = new ReadableStream({
           async start(controller) {
             const { encodeSSE } = await import('@/lib/utils')
+            // Clear any previous execution state to reset Wait block
+            const { setPausedContext } = useExecutionStore.getState()
+            setPausedContext(null) // Clear any paused context from previous execution
+            setExecutionIdentifiers({ executionId: null, workflowId: activeWorkflowId, isResuming: false })
             const executionId = uuidv4()
             setExecutionIdentifiers({ executionId, workflowId: activeWorkflowId, isResuming: false })
             const streamedContent = new Map<string, string>()
@@ -602,7 +606,6 @@ export function useWorkflowExecution() {
                   logger.info(`Processed ${processedCount} blocks for streaming tokenization`)
                 }
 
-                const { encodeSSE } = await import('@/lib/utils')
                 controller.enqueue(encodeSSE({ event: 'final', data: result }))
                 persistLogs(executionId, result).catch((err) =>
                   logger.error('Error persisting logs:', err)
@@ -625,7 +628,6 @@ export function useWorkflowExecution() {
               }
 
               // Send the error as final event so downstream handlers can treat it uniformly
-              const { encodeSSE } = await import('@/lib/utils')
               controller.enqueue(encodeSSE({ event: 'final', data: errorResult }))
 
               // Persist the error to logs so it shows up in the logs page
@@ -647,6 +649,10 @@ export function useWorkflowExecution() {
       }
 
       // For manual (non-chat) execution
+      // Clear any previous execution state to reset Wait block
+      const { setPausedContext } = useExecutionStore.getState()
+      setPausedContext(null) // Clear any paused context from previous execution
+      setExecutionIdentifiers({ executionId: null, workflowId: activeWorkflowId, isResuming: false })
       const executionId = uuidv4()
       setExecutionIdentifiers({ executionId, workflowId: activeWorkflowId, isResuming: false })
       try {
@@ -662,10 +668,20 @@ export function useWorkflowExecution() {
           if ((result.metadata as any)?.isPaused) {
             // Pause persistence is handled in executeWorkflow
             // Keep debugging state if paused, but mark execution inactive to allow resume button UI
+            logger.info('Workflow paused, keeping executionId active', { executionId })
+            // Don't persist logs when paused - logs will be persisted when execution resumes/completes
+            
+            // Store the paused context for in-memory resume
+            const pausedContext = (result.metadata as any)?.context
+            if (pausedContext) {
+              const { setPausedContext } = useExecutionStore.getState()
+              setPausedContext(pausedContext)
+              logger.info('Stored paused context in store for manual resume', { executionId })
+            }
+            
             setIsExecuting(false)
             setActiveBlocks(new Set())
-            // DO NOT clear executionId when paused - we need it for the resume UI
-            logger.info('Workflow paused, keeping executionId active', { executionId })
+            // Executor and pausedContext are now in store for manual resume
           } else {
             if (!isDebugModeEnabled) {
               setIsExecuting(false)
@@ -680,11 +696,12 @@ export function useWorkflowExecution() {
               }
               ;(result.metadata as any).source = 'chat'
             }
-          }
 
-          persistLogs(executionId, result).catch((err) => {
-            logger.error('Error persisting logs:', { error: err })
-          })
+            // Only persist logs when execution actually completes (not paused)
+            persistLogs(executionId, result).catch((err) => {
+              logger.error('Error persisting logs:', { error: err })
+            })
+          }
         }
         return result
       } catch (error: any) {
@@ -1040,22 +1057,34 @@ export function useWorkflowExecution() {
     // Execute workflow with the determined start block
     const result = await newExecutor.execute(activeWorkflowId || '', startBlockId)
 
-    // Check if execution was paused and persist the state
+    // Check if execution was paused
     if ((result as any)?.metadata?.isPaused && (result as any)?.metadata?.context) {
-      logger.info('Workflow paused, persisting state', {
+      const isDeployedContext = (result as any)?.metadata?.context?.isDeployedContext
+      
+      logger.info('Workflow paused', {
         executionId,
+        isDeployedContext,
         waitBlockInfo: (result as any).metadata?.waitBlockInfo,
       })
-      await persistPause(
-        executionId!,
-        (result as any).metadata.context,
-        workflow,
-        envVarValues,
-        finalWorkflowInput,
-        {
-          waitBlockInfo: (result as any).metadata?.waitBlockInfo,
-        }
-      )
+      
+      // Only persist to paused_executions table for deployed workflows
+      // Manual executions stay in memory (executor in store)
+      if (isDeployedContext) {
+        logger.info('Deployed execution paused, persisting to DB', { executionId })
+        await persistPause(
+          executionId!,
+          (result as any).metadata.context,
+          workflow,
+          envVarValues,
+          finalWorkflowInput,
+          {
+            waitBlockInfo: (result as any).metadata?.waitBlockInfo,
+            isDeployedContext: true,
+          }
+        )
+      } else {
+        logger.info('Manual execution paused, keeping in memory (executor in store)', { executionId })
+      }
     }
 
     return result

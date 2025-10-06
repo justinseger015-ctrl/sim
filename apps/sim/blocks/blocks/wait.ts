@@ -332,6 +332,10 @@ export const WaitBlock: BlockConfig = {
       type: 'string',
       description: 'Type of trigger used to resume (manual, api, webhook, schedule)',
     },
+    resumeUrl: {
+      type: 'string',
+      description: 'Unique webhook URL to resume this specific execution (use in blocks before Wait to send to external systems)',
+    },
   },
 }
 
