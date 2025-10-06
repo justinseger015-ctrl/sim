@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
+
 import { db } from '@sim/db'
 import { workflow as workflowTable } from '@sim/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { createLogger } from '@/lib/logs/console/logger'
 import { pauseResumeService } from '@/lib/execution/pause-resume-service'
 import { Executor } from '@/executor'
-import type { ExecutionResult } from '@/executor/types'
+import type { ExecutionResult, ExecutionContext } from '@/executor/types'
 import { parseWebhookBody } from '@/lib/webhooks/processor'
 import { generateRequestId } from '@/lib/utils'
 
@@ -14,6 +15,45 @@ const logger = createLogger('WebhookResumeAPI')
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 export const maxDuration = 300
+
+/**
+ * OPTIONS /api/webhooks/resume/[workflowId]/[executionId]
+ * Handle CORS preflight requests
+ */
+export async function OPTIONS(request: NextRequest) {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, X-Sim-Secret',
+    },
+  })
+}
+
+/**
+ * GET /api/webhooks/resume/[workflowId]/[executionId]
+ * Test endpoint to verify route is accessible
+ */
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ workflowId: string; executionId: string }> }
+) {
+  try {
+    const { workflowId, executionId } = await params
+    return NextResponse.json({
+      message: 'Webhook resume endpoint is accessible',
+      workflowId,
+      executionId,
+      method: 'GET',
+    })
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: 'Error in GET handler', message: error.message },
+      { status: 500 }
+    )
+  }
+}
 
 /**
  * POST /api/webhooks/resume/[workflowId]/[executionId]
@@ -27,22 +67,57 @@ export async function POST(
 ) {
   const startTime = Date.now()
   const requestId = generateRequestId()
+  let workflowId: string = 'unknown'
+  let executionId: string = 'unknown'
   
   try {
-    const { workflowId, executionId } = await params
-
+    const paramsData = await params
+    workflowId = paramsData.workflowId
+    executionId = paramsData.executionId
+    
     logger.info(`[${requestId}] Webhook resume request for execution ${executionId} of workflow ${workflowId}`)
 
-    // Parse webhook body using the same logic as regular webhooks
-    const parseResult = await parseWebhookBody(request, requestId)
+    // Parse webhook body - allow empty bodies for resume webhooks
+    logger.info(`[${requestId}] Parsing webhook body...`)
     
-    if (parseResult instanceof NextResponse) {
-      return parseResult
+    let resumeInput: any = {}
+    let rawBody: string = ''
+    
+    try {
+      const requestClone = request.clone()
+      rawBody = await requestClone.text()
+      
+      // Allow empty bodies for resume webhooks
+      if (rawBody && rawBody.length > 0) {
+        try {
+          resumeInput = JSON.parse(rawBody)
+          logger.info(`[${requestId}] Parsed JSON webhook payload`, {
+            resumeInputKeys: Object.keys(resumeInput),
+          })
+        } catch (parseError) {
+          logger.warn(`[${requestId}] Failed to parse webhook body as JSON, using empty object`, {
+            error: parseError instanceof Error ? parseError.message : String(parseError),
+          })
+          resumeInput = {}
+        }
+      } else {
+        logger.info(`[${requestId}] Empty webhook body, using empty object`)
+      }
+    } catch (bodyError) {
+      logger.error(`[${requestId}] Failed to read request body`, {
+        error: bodyError instanceof Error ? bodyError.message : String(bodyError),
+      })
+      resumeInput = {}
     }
     
-    const { body: resumeInput, rawBody } = parseResult
+    logger.info(`[${requestId}] Webhook body processing complete`, {
+      hasResumeInput: !!resumeInput,
+      resumeInputKeys: Object.keys(resumeInput || {}),
+      rawBodyLength: rawBody?.length,
+    })
 
     // Check if workflow exists
+    logger.info(`[${requestId}] Checking if workflow exists: ${workflowId}`)
     const [workflowData] = await db
       .select()
       .from(workflowTable)
@@ -53,9 +128,33 @@ export async function POST(
       logger.warn(`[${requestId}] Workflow not found: ${workflowId}`)
       return NextResponse.json({ error: 'Workflow not found' }, { status: 404 })
     }
+    
+    logger.info(`[${requestId}] Workflow found`, {
+      workflowId: workflowData.id,
+      workspaceId: workflowData.workspaceId,
+      name: workflowData.name,
+    })
 
     // Get the full resume data
-    const resumeData = await pauseResumeService.resumeExecution(executionId)
+    logger.info(`[${requestId}] Loading paused execution data for ${executionId}`)
+    
+    let resumeData: any
+    try {
+      resumeData = await pauseResumeService.resumeExecution(executionId)
+    } catch (dbError: any) {
+      logger.error(`[${requestId}] Database error loading paused execution`, {
+        error: dbError.message,
+        executionId,
+      })
+      return NextResponse.json(
+        { 
+          error: 'Database error loading paused execution data',
+          message: dbError.message,
+          executionId,
+        },
+        { status: 500 }
+      )
+    }
 
     if (!resumeData) {
       logger.warn(`[${requestId}] Failed to load paused execution data for ${executionId}`)
@@ -64,10 +163,22 @@ export async function POST(
         { status: 500 }
       )
     }
+    
+    logger.info(`[${requestId}] Paused execution data loaded`, {
+      hasWorkflowState: !!resumeData.workflowState,
+      hasExecutionContext: !!resumeData.executionContext,
+      hasMetadata: !!resumeData.metadata,
+      metadataKeys: Object.keys(resumeData.metadata || {}),
+    })
 
     // CRITICAL: Verify this is a deployed workflow execution
     // Webhook resume is only allowed for deployed contexts for security
     const isDeployedContext = resumeData.metadata?.isDeployedContext === true
+    
+    logger.info(`[${requestId}] Checking deployment context`, {
+      isDeployedContext,
+      metadataIsDeployedContext: resumeData.metadata?.isDeployedContext,
+    })
     
     if (!isDeployedContext) {
       logger.warn(`[${requestId}] Webhook resume attempted for non-deployed execution ${executionId}`)
@@ -83,6 +194,12 @@ export async function POST(
     // Extract wait block info to check webhook authentication
     const waitBlockInfoAuth = resumeData.metadata?.waitBlockInfo as any
     const triggerConfig = waitBlockInfoAuth?.triggerConfig
+    
+    logger.info(`[${requestId}] Checking webhook authentication`, {
+      hasWaitBlockInfo: !!waitBlockInfoAuth,
+      triggerType: triggerConfig?.type,
+      hasWebhookSecret: !!triggerConfig?.webhookSecret,
+    })
 
     // Verify webhook authentication if configured
     if (triggerConfig?.type === 'webhook' && triggerConfig?.webhookSecret) {
@@ -90,6 +207,11 @@ export async function POST(
       
       // Check X-Sim-Secret header (same as generic webhooks)
       const providedSecret = request.headers.get('x-sim-secret')
+      
+      logger.info(`[${requestId}] Webhook authentication required`, {
+        hasProvidedSecret: !!providedSecret,
+        headerPresent: request.headers.has('x-sim-secret'),
+      })
       
       if (!providedSecret) {
         logger.warn(`[${requestId}] Webhook resume request missing authentication header`)
@@ -111,32 +233,66 @@ export async function POST(
     })
 
     // Create executor from paused state
-    const { executor, context } = Executor.createFromPausedState(
-      resumeData.workflowState,
-      resumeData.executionContext,
-      resumeData.environmentVariables,
-      resumeData.workflowInput,
-      {},
-      {
-        executionId: executionId,
-        workspaceId: workflowData.workspaceId,
-        isDeployedContext: true,
-        resumeInput, // Include resume input in context for blocks to access
-      }
-    )
+    logger.info(`[${requestId}] Creating executor from paused state`)
+    
+    let executionResult: ExecutionResult
+    let context: ExecutionContext
+    let preResumeExecutedBlocks: Set<string>
+    
+    try {
+      const executorData = Executor.createFromPausedState(
+        resumeData.workflowState,
+        resumeData.executionContext,
+        resumeData.environmentVariables,
+        resumeData.workflowInput,
+        {},
+        {
+          executionId: executionId,
+          workspaceId: workflowData.workspaceId,
+          isDeployedContext: true,
+          resumeInput, // Include resume input in context for blocks to access
+          isResuming: true, // Mark that we're resuming
+        }
+      )
+      
+      const { executor } = executorData
+      context = executorData.context
+      
+      logger.info(`[${requestId}] Executor created successfully`, {
+        hasExecutor: !!executor,
+        hasContext: !!context,
+        executedBlocksCount: context.executedBlocks?.size || 0,
+        blockStatesCount: context.blockStates?.size || 0,
+      })
 
-    // Track which blocks were already executed before resume
-    const preResumeExecutedBlocks = new Set(context.executedBlocks)
+      // Track which blocks were already executed before resume
+      preResumeExecutedBlocks = new Set(context.executedBlocks)
 
-    // Resume execution
-    const result = await executor.resumeFromContext(workflowId, context)
+      // Resume execution
+      logger.info(`[${requestId}] Starting resume execution from context`)
+      const result = await executor.resumeFromContext(workflowId, context)
+      logger.info(`[${requestId}] Resume execution completed`, {
+        hasResult: !!result,
+        resultType: typeof result,
+        hasStream: 'stream' in result,
+        hasExecution: 'execution' in result,
+      })
 
-    // Check if we got a StreamingExecution result (with stream + execution properties)
-    // For resume, we only care about the ExecutionResult part, not the stream
-    const executionResult: ExecutionResult = 'stream' in result && 'execution' in result ? result.execution : result
+      // Check if we got a StreamingExecution result (with stream + execution properties)
+      // For resume, we only care about the ExecutionResult part, not the stream
+      executionResult = 'stream' in result && 'execution' in result ? result.execution : result
+    } catch (executorError: any) {
+      logger.error(`[${requestId}] Failed to create or execute from paused state`, {
+        error: executorError.message,
+        stack: executorError.stack,
+        name: executorError.name,
+        phase: 'executor_creation',
+      })
+      throw executorError
+    }
 
     // Filter logs to only include blocks executed AFTER resume (not before pause)
-    const newLogs = (executionResult.logs || []).filter(log => 
+    const newLogs = (executionResult.logs || []).filter((log: any) => 
       !preResumeExecutedBlocks.has(log.blockId)
     )
 
@@ -215,11 +371,19 @@ export async function POST(
     })
   } catch (error: any) {
     const duration = Date.now() - startTime
-    logger.error(`[${requestId}] Error in webhook resume:`, error)
+    logger.error(`[${requestId}] Error in webhook resume:`, {
+      error: error.message,
+      stack: error.stack,
+      name: error.name,
+      code: error.code,
+      executionId: executionId || 'unknown',
+      workflowId: workflowId || 'unknown',
+    })
     return NextResponse.json(
       {
         error: 'Internal server error during webhook resume',
         message: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
         duration,
       },
       { status: 500 }

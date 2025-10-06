@@ -395,7 +395,39 @@ export async function executeWorkflow(
     logger.info(`[${requestId}] Workflow execution completed: ${workflowId}`, {
       success: result.success,
       executionTime: result.metadata?.duration,
+      isPaused: result.metadata?.isPaused,
     })
+
+    // Check if execution was paused (e.g., by a Wait block)
+    if (result.metadata?.isPaused && result.metadata?.context) {
+      logger.info(`[${requestId}] Workflow paused, persisting state`, {
+        executionId,
+        waitBlockInfo: result.metadata?.waitBlockInfo,
+      })
+
+      // Import the pause service
+      const { pauseResumeService } = await import('@/lib/execution/pause-resume-service')
+      
+      try {
+        await pauseResumeService.pauseExecution({
+          workflowId,
+          executionId,
+          userId: workflow.userId,
+          executionContext: result.metadata.context,
+          workflowState: serializedWorkflow,
+          environmentVariables: decryptedEnvVars,
+          workflowInput: processedInput,
+          metadata: {
+            waitBlockInfo: result.metadata?.waitBlockInfo,
+            isDeployedContext: true,
+          },
+        })
+        logger.info(`[${requestId}] Successfully persisted paused execution state`)
+      } catch (pauseError: any) {
+        logger.error(`[${requestId}] Failed to persist paused execution state`, pauseError)
+        // Continue - still return the result even if persistence failed
+      }
+    }
 
     // Build trace spans from execution result (works for both success and failure)
     const { traceSpans, totalDuration } = buildTraceSpans(result)
