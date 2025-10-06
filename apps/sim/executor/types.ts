@@ -86,6 +86,13 @@ export interface ExecutionMetadata {
   isPaused?: boolean // Whether the workflow execution is paused
   context?: ExecutionContext // Runtime context for the workflow
   workflowConnections?: Array<{ source: string; target: string }> // Connections between workflow blocks
+  waitBlockInfo?: {
+    blockId: string
+    blockName: string
+    pausedAt: string
+    description: string
+    triggerConfig: Record<string, any>
+  } // Information about the Wait/User Approval block that paused execution
 }
 
 /**

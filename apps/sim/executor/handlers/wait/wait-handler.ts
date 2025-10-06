@@ -12,7 +12,7 @@ const logger = createLogger('WaitBlockHandler')
  */
 export class WaitBlockHandler implements BlockHandler {
   canHandle(block: SerializedBlock): boolean {
-    return block.metadata?.id === 'wait'
+    return block.metadata?.id === 'wait' || block.metadata?.id === 'user_approval'
   }
 
   async execute(

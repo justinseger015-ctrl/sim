@@ -320,6 +320,13 @@ export class Executor {
       resumeTime: resumeTime.toISOString(),
     })
 
+    // Clear pause flags from the context before resuming
+    // This ensures the executor can pause again at the next Wait/User Approval block
+    delete (context as any).shouldPauseAfterBlock
+    delete (context as any).pauseReason
+    delete (context as any).waitBlockInfo
+    logger.info('Cleared pause flags from context for resume')
+
     try {
       // Only manage global execution state for parent executions
       if (!this.isChildExecution) {
@@ -445,6 +452,24 @@ export class Executor {
 
           await this.loopManager.processLoopIterations(context)
           await this.parallelManager.processParallelIterations(context)
+
+          // Check if a Wait/User Approval block has requested a pause
+          if ((context as any).shouldPauseAfterBlock) {
+            if (context.metadata && !context.metadata.waitBlockInfo) {
+              ;(context.metadata as any).waitBlockInfo = (context as any).waitBlockInfo
+            }
+
+            logger.info('Wait/User Approval block detected - pausing workflow execution during resume', {
+              workflowId,
+              pauseReason: (context as any).pauseReason,
+            })
+
+            // Trigger the pause
+            this.pause()
+
+            // Break out of the execution loop
+            break
+          }
 
           const updatedNextLayer = this.getNextExecutionLayer(context)
           if (updatedNextLayer.length === 0) {
@@ -2210,8 +2235,8 @@ export class Executor {
       }
       logger.info(`Using handler ${handler.constructor.name} for block ${block.metadata?.id}`)
       
-      if (block.metadata?.id === 'wait') {
-        logger.info('Wait block configuration:', {
+      if (block.metadata?.id === 'wait' || block.metadata?.id === 'user_approval') {
+        logger.info(`${block.metadata?.name || block.metadata?.id} configuration:`, {
           tool: block.config.tool,
           params: block.config.params,
           metadata: block.metadata

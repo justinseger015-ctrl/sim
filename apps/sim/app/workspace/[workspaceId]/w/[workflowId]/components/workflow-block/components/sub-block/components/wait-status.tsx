@@ -37,12 +37,21 @@ export function WaitStatus({ blockId, isPreview, disabled }: WaitStatusProps) {
   
   // Check if we have an in-memory paused executor (manual execution)
   const isPausedInMemory = useMemo(() => {
+    logger.info('isPausedInMemory re-evaluating', {
+      blockId,
+      hasExecutor: !!executor,
+      hasExecutionId: !!executionId,
+      hasPausedContext: !!pausedContext,
+      isPreview,
+    })
+    
     if (isPreview || !executor || !executionId || !pausedContext) {
       return false
     }
     
     // Check if THIS block is the one that caused the pause
-    const waitBlockInfo = (pausedContext.metadata as any)?.waitBlockInfo
+    // Check both locations for backward compatibility
+    const waitBlockInfo = (pausedContext.metadata as any)?.waitBlockInfo || (pausedContext as any)?.waitBlockInfo
     const isPausedAtThisBlock = waitBlockInfo?.blockId === blockId
     
     logger.info('isPausedInMemory check', { 
@@ -169,17 +178,15 @@ export function WaitStatus({ blockId, isPreview, disabled }: WaitStatusProps) {
         // Handle the result
         const executionResult = 'stream' in result && 'execution' in result ? result.execution : result
         
-        logger.info('Manual resume completed', { success: executionResult.success, isPaused: (executionResult.metadata as any)?.isPaused })
+        const isPausedAgain = (executionResult.metadata as any)?.isPaused
         
-        // Clean up: clear executor and paused context from store
-        setExecutor(null)
-        setPausedContext(null)
-        setIsExecuting(false)
-        setActiveBlocks(new Set())
-        setExecutionIdentifiers({ executionId: null, workflowId, isResuming: false })
-        setIsResuming(false)
+        logger.info('Manual resume completed', { 
+          success: executionResult.success, 
+          isPausedAgain,
+          waitBlockInfo: (executionResult.metadata as any)?.waitBlockInfo
+        })
         
-        // Add logs to console
+        // Add logs to console (only for blocks executed during this resume)
         if (executionResult.logs && Array.isArray(executionResult.logs)) {
           executionResult.logs.forEach((log: any) => {
             addConsole({
@@ -199,15 +206,55 @@ export function WaitStatus({ blockId, isPreview, disabled }: WaitStatusProps) {
           })
         }
         
+        // If paused again at another Wait/User Approval block, update the paused context
+        if (isPausedAgain) {
+          const newPausedContext = (executionResult.metadata as any)?.context
+          const latestWaitBlockInfo = (executionResult.metadata as any)?.waitBlockInfo
+          
+          if (newPausedContext && latestWaitBlockInfo) {
+            // Ensure the context has the latest waitBlockInfo
+            const updatedContext = {
+              ...newPausedContext,
+              metadata: {
+                ...newPausedContext.metadata,
+                waitBlockInfo: latestWaitBlockInfo
+              }
+            }
+            
+            // Update context.waitBlockInfo as well (for backward compatibility)
+            ;(updatedContext as any).waitBlockInfo = latestWaitBlockInfo
+            
+            setPausedContext(updatedContext)
+            logger.info('Workflow paused again at another Wait/User Approval block', {
+              waitBlockInfo: latestWaitBlockInfo,
+              newPausedBlockId: latestWaitBlockInfo.blockId,
+              newPausedBlockName: latestWaitBlockInfo.blockName,
+            })
+          }
+          setIsExecuting(false)
+          setActiveBlocks(new Set())
+          setIsResuming(false)
+          // Keep executor and executionId for next resume
+        } else {
+          // Execution completed - clean up everything
+          setIsResuming(false)
+          setIsExecuting(false)
+          setActiveBlocks(new Set())
+          setExecutionIdentifiers({ executionId: null, workflowId, isResuming: false })
+          setExecutor(null)
+          setPausedContext(null)
+        }
+        
         return
       } catch (err: any) {
         logger.error('Error resuming from memory', err)
         setError(err.message || 'Failed to resume execution')
-        setExecutor(null)
-        setPausedContext(null)
+        setIsResuming(false)
         setIsExecuting(false)
         setActiveBlocks(new Set())
-        setIsResuming(false)
+        setExecutionIdentifiers({ executionId: null, workflowId, isResuming: false })
+        setExecutor(null)
+        setPausedContext(null)
         return
       }
     }
@@ -343,11 +390,15 @@ export function WaitStatus({ blockId, isPreview, disabled }: WaitStatusProps) {
 
   // Log when pausedContext changes to verify store updates
   useEffect(() => {
+    const waitBlockInfo = pausedContext ? (pausedContext.metadata as any)?.waitBlockInfo || (pausedContext as any)?.waitBlockInfo : null
     logger.info('pausedContext changed in store', { 
       hasPausedContext: !!pausedContext,
       blockId,
       executionId,
-      isPausedInMemory 
+      isPausedInMemory,
+      pausedBlockId: waitBlockInfo?.blockId,
+      pausedBlockName: waitBlockInfo?.blockName,
+      isThisBlockPaused: waitBlockInfo?.blockId === blockId,
     })
   }, [pausedContext, blockId, executionId, isPausedInMemory])
 

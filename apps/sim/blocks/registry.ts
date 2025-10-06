@@ -77,6 +77,7 @@ import { ThinkingBlock } from '@/blocks/blocks/thinking'
 import { TranslateBlock } from '@/blocks/blocks/translate'
 import { TwilioSMSBlock } from '@/blocks/blocks/twilio'
 import { TypeformBlock } from '@/blocks/blocks/typeform'
+import { UserApprovalBlock } from '@/blocks/blocks/user-approval'
 import { VisionBlock } from '@/blocks/blocks/vision'
 import { WaitBlock } from '@/blocks/blocks/wait'
 import { WealthboxBlock } from '@/blocks/blocks/wealthbox'
@@ -166,6 +167,7 @@ export const registry: Record<string, BlockConfig> = {
   translate: TranslateBlock,
   twilio_sms: TwilioSMSBlock,
   typeform: TypeformBlock,
+  user_approval: UserApprovalBlock,
   vision: VisionBlock,
   wait: WaitBlock,
   wealthbox: WealthboxBlock,

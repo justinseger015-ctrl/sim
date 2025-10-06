@@ -224,6 +224,29 @@ export class Serializer {
       }
     }
 
+    // Special handling for User Approval blocks (same as Wait, different branding)
+    if (block.type === 'user_approval') {
+      const params = this.extractParams(block)
+      return {
+        id: block.id,
+        position: block.position,
+        config: {
+          tool: '', // User Approval blocks don't use tools
+          params, // Include all approval configuration
+        },
+        inputs: {},
+        outputs: {},
+        metadata: {
+          id: 'user_approval',
+          name: block.name,
+          description: 'Pause workflow and wait for user approval',
+          category: 'blocks',
+          color: '#10B981',
+        },
+        enabled: block.enabled,
+      }
+    }
+
     const blockConfig = getBlock(block.type)
     if (!blockConfig) {
       throw new Error(`Invalid block type: ${block.type}`)
