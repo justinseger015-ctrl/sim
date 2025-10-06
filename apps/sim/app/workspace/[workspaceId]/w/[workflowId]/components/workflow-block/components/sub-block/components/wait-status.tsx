@@ -2,11 +2,13 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { createLogger } from '@/lib/logs/console/logger'
 import { useExecutionStore } from '@/stores/execution/store'
 import { useConsoleStore } from '@/stores/panel/console/store'
+import { Copy, Check } from 'lucide-react'
 
 const logger = createLogger('WaitStatus')
 
 interface WaitStatusProps {
   blockId: string
+  subBlockId?: string  // Used to determine display mode
   isPreview?: boolean
   disabled?: boolean
 }
@@ -17,7 +19,7 @@ interface PausedExecutionInfo {
   metadata: Record<string, any>
 }
 
-export function WaitStatus({ blockId, isPreview, disabled }: WaitStatusProps) {
+export function WaitStatus({ blockId, subBlockId, isPreview, disabled }: WaitStatusProps) {
   const executionId = useExecutionStore((state) => state.executionId)
   const workflowId = useExecutionStore((state) => state.workflowId)
   const isExecuting = useExecutionStore((state) => state.isExecuting)
@@ -34,6 +36,7 @@ export function WaitStatus({ blockId, isPreview, disabled }: WaitStatusProps) {
   const [error, setError] = useState<string | null>(null)
   const [pausedInfo, setPausedInfo] = useState<PausedExecutionInfo | null>(null)
   const [isResuming, setIsResuming] = useState(false)
+  const [copied, setCopied] = useState(false)
   
   // Check if we have an in-memory paused executor (manual execution)
   const isPausedInMemory = useMemo(() => {
@@ -431,8 +434,87 @@ export function WaitStatus({ blockId, isPreview, disabled }: WaitStatusProps) {
 
   const waitInfo = (pausedInfo?.metadata as { waitBlockInfo?: any } | undefined)?.waitBlockInfo
 
-  // Show resume button if paused (either in-memory or from DB)
-  const showResumeButton = isPausedInMemory || pausedInfo
+  // Check if this is webhook display mode
+  const isWebhookDisplay = subBlockId === 'webhookStatus'
+  
+  // Show resume button if paused (either in-memory or from DB) and not in webhook display mode
+  const showResumeButton = (isPausedInMemory || pausedInfo) && !isWebhookDisplay
+  
+  // Get webhook URL from paused info or context
+  const webhookUrl = useMemo(() => {
+    if (!isWebhookDisplay) return null
+    
+    // For paused executions, get URL from wait block output
+    if (isPausedInMemory || pausedInfo) {
+      const blockStates = pausedContext?.blockStates || (pausedInfo?.metadata as any)?.context?.blockStates
+      if (blockStates) {
+        const blockState = blockStates.get ? blockStates.get(blockId) : blockStates[blockId]
+        return blockState?.output?.resumeUrl
+      }
+    }
+    
+    return null
+  }, [isWebhookDisplay, isPausedInMemory, pausedInfo, pausedContext, blockId])
+  
+  const copyToClipboard = useCallback(async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (err) {
+      logger.error('Failed to copy to clipboard:', err)
+    }
+  }, [])
+
+  // If webhook display mode
+  if (isWebhookDisplay) {
+    return (
+      <div className="space-y-2">
+        {webhookUrl ? (
+          <div className="rounded border p-3 text-sm">
+            <div className="flex items-center justify-between mb-2">
+              <div className="font-medium text-foreground">Webhook Resume URL</div>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => copyToClipboard(webhookUrl)}
+              >
+                {copied ? (
+                  <>
+                    <Check className="h-3 w-3" />
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3 w-3" />
+                    Copy URL
+                  </>
+                )}
+              </button>
+            </div>
+            <div className="mb-3">
+              <code className="block p-2 bg-muted rounded text-xs break-all">
+                {webhookUrl}
+              </code>
+            </div>
+            <div className="text-xs text-muted-foreground mb-2">
+              Send a POST request to this URL to resume the workflow:
+            </div>
+            <pre className="p-2 bg-muted rounded text-xs overflow-x-auto">
+{`curl -X POST ${webhookUrl} \\
+  -H "Content-Type: application/json" \\
+  -H "X-Sim-Secret: <your-secret>" \\
+  -d '{"key": "value"}'`}
+            </pre>
+          </div>
+        ) : (
+          <div className="rounded border border-dashed p-3 text-sm text-muted-foreground">
+            The webhook URL will be generated when the workflow pauses at this block
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-2">

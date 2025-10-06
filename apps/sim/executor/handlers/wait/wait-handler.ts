@@ -2,6 +2,8 @@ import { createLogger } from '@/lib/logs/console/logger'
 import type { BlockHandler, ExecutionContext } from '@/executor/types'
 import type { SerializedBlock } from '@/serializer/types'
 import { getBaseUrl } from '@/lib/urls/utils'
+import { executeTool } from '@/tools'
+import { retryWithExponentialBackoff } from '@/lib/knowledge/documents/utils'
 
 const logger = createLogger('WaitBlockHandler')
 
@@ -44,6 +46,26 @@ export class WaitBlockHandler implements BlockHandler {
 
     const resumeTriggerType = inputs.resumeTriggerType || 'time'
     const pausedAt = new Date().toISOString()
+    
+    // Check if we're resuming from a webhook trigger
+    const isResuming = (context as any).isResuming
+    const resumeInput = (context as any).resumeInput
+    
+    if (isResuming && resumeTriggerType === 'webhook') {
+      logger.info(`Wait block resumed via webhook`, {
+        blockId: block.id,
+        hasResumeInput: !!resumeInput,
+      })
+      
+      return {
+        pausedAt: (context as any).waitBlockInfo?.pausedAt || pausedAt,
+        resumedAt: new Date().toISOString(),
+        triggerType: 'webhook',
+        resumeInput: resumeInput || {},
+        status: 'resumed',
+        message: `Workflow resumed via webhook`,
+      }
+    }
 
     // Handle time-based wait
     if (resumeTriggerType === 'time') {
@@ -100,12 +122,30 @@ export class WaitBlockHandler implements BlockHandler {
     
     // Handle webhook-based wait (using pause mechanism)
     if (resumeTriggerType === 'webhook') {
+      // Check if we're resuming from a webhook trigger
+      const isResuming = (context as any).isResuming
+      const resumeInput = (context as any).resumeInput
+      
+      if (isResuming) {
+        logger.info(`Wait block resumed via webhook`, {
+          blockId: block.id,
+          hasResumeInput: !!resumeInput,
+        })
+        
+        return {
+          pausedAt: (context as any).waitBlockInfo?.pausedAt || pausedAt,
+          resumedAt: new Date().toISOString(),
+          triggerType: 'webhook',
+          resumeInput: resumeInput || {},
+          status: 'resumed',
+          message: `Workflow resumed via webhook`,
+        }
+      }
+      
       // Build trigger configuration
       const triggerConfig: Record<string, any> = {
         type: 'webhook',
-        webhookPath: inputs.webhookPath || '',
         webhookSecret: inputs.webhookSecret || '',
-        inputFormat: inputs.webhookInputFormat || [],
       }
 
       logger.info(`Wait block configured with webhook trigger`, {
@@ -159,6 +199,242 @@ export class WaitBlockHandler implements BlockHandler {
         isDeployed: context.isDeployedContext,
       })
 
+      // Store the output in context so it can be resolved
+      const waitOutput = {
+        pausedAt,
+        resumeUrl,
+        triggerType: 'webhook',
+        status: 'waiting',
+      }
+      
+      // Update the block state with the output
+      if (!context.blockStates.has(block.id)) {
+        context.blockStates.set(block.id, { 
+          output: {},
+          executed: true,
+          executionTime: 0
+        })
+      }
+      const blockState = context.blockStates.get(block.id)!
+      blockState.output = waitOutput as any
+
+      // Send webhook notification if configured
+      let webhookSent = false
+      let webhookResponse: any = null
+      let webhookError: string | undefined
+
+      // Resolve variables in webhook URL if needed
+      let webhookUrl = inputs.webhookSendUrl
+      if (webhookUrl && typeof webhookUrl === 'string') {
+        const blockName = block.metadata?.name || 'wait'
+        const normalizedBlockName = blockName.toLowerCase().replace(/\s+/g, '')
+        
+        // Replace variable references in URL
+        webhookUrl = webhookUrl.replace(
+          new RegExp(`<${normalizedBlockName}\\.(\\w+)>`, 'g'),
+          (match: string, property: string) => {
+            if (property === 'resumeUrl' || property === 'resumeurl') {
+              return resumeUrl || ''
+            }
+            return (waitOutput as any)[property] || match
+          }
+        )
+        
+        webhookUrl = webhookUrl.replace(
+          new RegExp(`<${blockName.replace(/\s+/g, '')}\\.(\\w+)>`, 'gi'),
+          (match: string, property: string) => {
+            if (property.toLowerCase() === 'resumeurl') {
+              return resumeUrl || ''
+            }
+            return (waitOutput as any)[property] || match
+          }
+        )
+      }
+      
+      if (webhookUrl && resumeUrl) {
+        logger.info('Wait block preparing to send notification webhook', {
+          url: webhookUrl,
+          originalUrl: inputs.webhookSendUrl,
+          hasBody: !!inputs.webhookSendBody,
+          hasHeaders: !!inputs.webhookSendHeaders,
+          hasParams: !!inputs.webhookSendParams,
+        })
+        
+        try {
+          // Parse the webhook body first
+          let webhookBody = inputs.webhookSendBody
+          
+          if (typeof webhookBody === 'string') {
+            // Simple variable resolution for the current block
+            const blockName = block.metadata?.name || 'wait'
+            const normalizedBlockName = blockName.toLowerCase().replace(/\s+/g, '')
+            
+            // Replace variable references - use JSON.stringify for proper quoting
+            let bodyStr = webhookBody.replace(
+              new RegExp(`<${normalizedBlockName}\\.(\\w+)>`, 'g'),
+              (match: string, property: string) => {
+                if (property === 'resumeUrl' || property === 'resumeurl') {
+                  return JSON.stringify(resumeUrl || '')
+                }
+                const value = (waitOutput as any)[property]
+                if (value !== undefined) {
+                  return JSON.stringify(value)
+                }
+                return match
+              }
+            )
+            
+            // Also handle with original block name
+            bodyStr = bodyStr.replace(
+              new RegExp(`<${blockName.replace(/\s+/g, '')}\\.(\\w+)>`, 'gi'),
+              (match: string, property: string) => {
+                if (property.toLowerCase() === 'resumeurl') {
+                  return JSON.stringify(resumeUrl || '')
+                }
+                const value = (waitOutput as any)[property]
+                if (value !== undefined) {
+                  return JSON.stringify(value)
+                }
+                return match
+              }
+            )
+            
+            // Now try to parse the result as JSON
+            try {
+              webhookBody = JSON.parse(bodyStr)
+            } catch {
+              // If not JSON, use as-is
+              webhookBody = bodyStr
+            }
+          }
+
+          // Also support template variables for backward compatibility
+          const bodyStrFinal = JSON.stringify(webhookBody || {})
+          const replacedBody = bodyStrFinal
+            .replace(/{{resumeUrl}}/g, resumeUrl || '')
+            .replace(/{{workflowId}}/g, workflowId || '')
+            .replace(/{{executionId}}/g, executionId || '')
+          
+          const finalBody = JSON.parse(replacedBody)
+
+          // Ensure headers and params are in the correct format for http_request tool
+          // The tool expects TableRow[] format, not plain objects
+          const headers = inputs.webhookSendHeaders || []
+          const params = inputs.webhookSendParams || []
+          
+          // Resolve variables in headers and params
+          const resolveTableValue = (table: any[]) => {
+            return table.map(row => {
+              if (row.cells && row.cells.Value && typeof row.cells.Value === 'string') {
+                let value = row.cells.Value
+                
+                // Replace variable references for this block
+                const blockName = block.metadata?.name || 'wait'
+                const normalizedBlockName = blockName.toLowerCase().replace(/\s+/g, '')
+                
+                value = value.replace(
+                  new RegExp(`<${normalizedBlockName}\\.(\\w+)>`, 'g'),
+                  (match: string, property: string) => {
+                    if (property === 'resumeUrl' || property === 'resumeurl') {
+                      return resumeUrl || ''
+                    }
+                    return (waitOutput as any)[property] || match
+                  }
+                )
+                
+                // Also handle with original block name
+                value = value.replace(
+                  new RegExp(`<${blockName.replace(/\s+/g, '')}\\.(\\w+)>`, 'gi'),
+                  (match: string, property: string) => {
+                    if (property.toLowerCase() === 'resumeurl') {
+                      return resumeUrl || ''
+                    }
+                    return (waitOutput as any)[property] || match
+                  }
+                )
+                
+                return { ...row, cells: { ...row.cells, Value: value } }
+              }
+              return row
+            })
+          }
+          
+          const resolvedHeaders = resolveTableValue(headers)
+          const resolvedParams = resolveTableValue(params)
+
+          // Log the final request details
+          logger.info('Wait block sending webhook with resolved values', {
+            url: webhookUrl,
+            originalUrl: inputs.webhookSendUrl,
+            method: inputs.webhookSendMethod || 'POST',
+            bodyRaw: inputs.webhookSendBody,
+            bodyFinal: finalBody,
+            paramsCount: resolvedParams.length,
+            headersCount: resolvedHeaders.length,
+          })
+
+          // Send webhook with retries
+          const sendWebhook = async () => {
+            // Ensure URL is provided
+            if (!webhookUrl) {
+              throw new Error('Webhook URL is required but was not provided')
+            }
+            
+            const result = await executeTool(
+              'http_request',
+              {
+                url: webhookUrl, // Use the resolved webhook URL
+                method: inputs.webhookSendMethod || 'POST',
+                params: resolvedParams, // Use resolved params with variables replaced
+                headers: resolvedHeaders, // Use resolved headers with variables replaced
+                body: finalBody,
+              },
+              false, // skipProxy
+              false, // skipPostProcess
+              context
+            )
+
+            if (!result.success) {
+              const error = new Error(result.error || 'Webhook send failed')
+              ;(error as any).status = result.output?.status
+              throw error
+            }
+
+            return result.output
+          }
+
+          // Always use retry logic for webhook sending
+          webhookResponse = await retryWithExponentialBackoff(sendWebhook, {
+            maxRetries: 5,
+            initialDelayMs: 5000,
+            maxDelayMs: 10 * 60 * 1000, // 10 minutes max
+            retryCondition: (error: any) => {
+              // Don't retry for missing URL or configuration errors
+              const errorMessage = error.message || error.error || ''
+              if (errorMessage.includes('Missing') || errorMessage.includes('required')) {
+                return false
+              }
+              
+              // Retry on 5xx and 429 errors
+              const status = error.status || error.output?.status
+              return !status || status >= 500 || status === 429
+            },
+          })
+
+          webhookSent = true
+          logger.info('Wait block webhook sent successfully', { 
+            url: webhookUrl,
+            resumeUrl,
+          })
+        } catch (error) {
+          webhookError = error instanceof Error ? error.message : String(error)
+          logger.error('Wait block webhook send failed', { 
+            url: webhookUrl,
+            error: webhookError,
+          })
+        }
+      }
+
       // Return output that indicates this is a wait block
       return {
         pausedAt,
@@ -167,6 +443,9 @@ export class WaitBlockHandler implements BlockHandler {
         resumeUrl,
         status: 'waiting',
         message: `Workflow paused at ${block.metadata?.name || 'Wait block'}. Resume via webhook call.`,
+        webhookSent,
+        webhookResponse,
+        ...(webhookError && { webhookError }),
       }
     }
 

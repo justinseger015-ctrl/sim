@@ -334,6 +334,9 @@ export class Executor {
     delete (context as any).pauseReason
     delete (context as any).waitBlockInfo
     logger.info('Cleared pause flags from context for resume')
+    
+    // Mark that we're resuming so blocks can detect it
+    ;(context as any).isResuming = true
 
     try {
       // Only manage global execution state for parent executions
@@ -571,8 +574,11 @@ export class Executor {
         logs: context.blockLogs,
       }
     } finally {
-      // Clear current context
+      // Clear current context and resuming flag
       this.currentContext = null
+      if (context) {
+        delete (context as any).isResuming
+      }
       
       if (!this.isChildExecution) {
         setPendingBlocks([])

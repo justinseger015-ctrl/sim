@@ -355,7 +355,7 @@ export function SubBlock({
           />
         )
       case 'wait-status':
-        return <WaitStatus blockId={blockId} isPreview={isPreview} disabled={isDisabled} />
+        return <WaitStatus blockId={blockId} subBlockId={config.id} isPreview={isPreview} disabled={isDisabled} />
       case 'oauth-input':
         return (
           <CredentialSelector
