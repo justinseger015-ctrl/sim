@@ -74,12 +74,8 @@ export class WaitBlockHandler implements BlockHandler {
       })
       
       return {
-        pausedAt: (context as any).waitBlockInfo?.pausedAt || pausedAt,
-        resumedAt: new Date().toISOString(),
-        triggerType: 'webhook',
-        resumeInput: resumeInput || {},
+        webhook: resumeInput || {},
         status: 'resumed',
-        message: `Workflow resumed via webhook`,
       }
     }
 
@@ -116,23 +112,14 @@ export class WaitBlockHandler implements BlockHandler {
       if (!completed) {
         logger.info('Wait was interrupted by cancellation')
         return {
-          pausedAt,
-          triggerType: 'time',
           waitDuration: waitMs,
           status: 'cancelled',
-          message: `Wait was cancelled after starting`,
         }
       }
       
-      const resumedAt = new Date().toISOString()
-      
       return {
-        pausedAt,
-        resumedAt,
-        triggerType: 'time',
         waitDuration: waitMs,
-        status: 'resumed',
-        message: `Waited for ${timeValue} ${timeUnit}`,
+        status: 'completed',
       }
     }
     
@@ -149,12 +136,8 @@ export class WaitBlockHandler implements BlockHandler {
         })
         
         return {
-          pausedAt: (context as any).waitBlockInfo?.pausedAt || pausedAt,
-          resumedAt: new Date().toISOString(),
-          triggerType: 'webhook',
-          resumeInput: resumeInput || {},
+          webhook: resumeInput || {},
           status: 'resumed',
-          message: `Workflow resumed via webhook`,
         }
       }
       
@@ -196,6 +179,35 @@ export class WaitBlockHandler implements BlockHandler {
       const triggerConfig: Record<string, any> = {
         type: 'webhook',
         webhookSecret: inputs.webhookSecret || '',
+      }
+
+      // Check for mock response early (client-side testing mode)
+      // If mock response is provided and we're in client mode, skip webhook entirely
+      const registry = await getExecutionRegistry()
+      const mockResponse = inputs.mockResponse
+      
+      if (!registry && mockResponse) {
+        logger.info('Wait block using mock response (client-side execution) - skipping webhook', {
+          executionId,
+          workflowId,
+          blockId: block.id,
+          hasMockData: !!mockResponse,
+        })
+        
+        // Parse mock response if it's a string
+        let mockData = mockResponse
+        if (typeof mockResponse === 'string') {
+          try {
+            mockData = JSON.parse(mockResponse)
+          } catch (error) {
+            logger.warn('Failed to parse mock response as JSON, using as-is', { error })
+          }
+        }
+        
+        return {
+          webhook: mockData || {},
+          status: 'resumed',
+        }
       }
 
       // Send webhook notification if configured
@@ -423,11 +435,9 @@ export class WaitBlockHandler implements BlockHandler {
           blockId: block.id,
         })
 
-        // Get execution registry (server-side only)
-        const registry = await getExecutionRegistry()
-        
+        // Registry was already checked earlier - if we're here, it must be available
         if (!registry) {
-          throw new Error('Redis execution registry not available - cannot process wait block')
+          throw new Error('Redis execution registry not available - cannot process wait block. Add a mock response for client-side testing.')
         }
 
         // DO NOT set pause flags here - we're handling the wait ourselves via Redis BLPOP
@@ -455,22 +465,11 @@ export class WaitBlockHandler implements BlockHandler {
           throw error
         }
 
-        const resumedAt = new Date().toISOString()
-
         if (!resumeData) {
           // Timeout or cancellation
           logger.warn('Wait block timeout or cancelled', { executionId, blockId: block.id })
           return {
-            pausedAt,
-            resumedAt,
-            triggerType: 'webhook',
-            triggerConfig,
-            resumeUrl,
             status: 'timeout',
-            message: `Wait block timed out after 3 minutes`,
-            webhookSent,
-            webhookResponse,
-            ...(webhookError && { webhookError }),
           }
         }
 
@@ -478,14 +477,7 @@ export class WaitBlockHandler implements BlockHandler {
         if (resumeData.cancelled) {
           logger.info('Wait block cancelled via registry', { executionId, blockId: block.id })
           return {
-            pausedAt,
-            resumedAt,
-            triggerType: 'webhook',
             status: 'cancelled',
-            message: `Wait block cancelled`,
-            webhookSent,
-            webhookResponse,
-            ...(webhookError && { webhookError }),
           }
         }
 
@@ -497,17 +489,8 @@ export class WaitBlockHandler implements BlockHandler {
         })
 
         return {
-          pausedAt,
-          resumedAt,
-          triggerType: 'webhook',
-          triggerConfig,
-          resumeUrl,
-          resumeInput: resumeData || {},
+          webhook: resumeData || {},
           status: 'resumed',
-          message: `Workflow resumed via webhook`,
-          webhookSent,
-          webhookResponse,
-          ...(webhookError && { webhookError }),
         }
       } else {
         throw new Error('Cannot process wait block without execution ID and workflow ID')
@@ -525,15 +508,41 @@ export class WaitBlockHandler implements BlockHandler {
       const workflowId = context.workflowId
 
       if (executionId && workflowId) {
+        // Check for mock response early (client-side testing mode)
+        const registry = await getExecutionRegistry()
+        const mockResponse = inputs.mockResponse
+        
+        if (!registry && mockResponse) {
+          logger.info('User approval block using mock response (client-side execution)', {
+            executionId,
+            workflowId,
+            blockId: block.id,
+          })
+          
+          // Parse mock response if it's a string
+          let mockData = mockResponse
+          if (typeof mockResponse === 'string') {
+            try {
+              mockData = JSON.parse(mockResponse)
+            } catch (error) {
+              logger.warn('Failed to parse mock response as JSON, using as-is', { error })
+            }
+          }
+          
+          return {
+            webhook: mockData || {},
+            status: 'approved',
+          }
+        }
+
         logger.info('User approval block entering sleep mode via Redis', {
           executionId,
           workflowId,
           blockId: block.id,
         })
-
-        const registry = await getExecutionRegistry()
+        
         if (!registry) {
-          throw new Error('Redis execution registry not available - cannot process user approval block')
+          throw new Error('Redis execution registry not available - cannot process user approval block. Add a mock response for client-side testing.')
         }
 
         // Register and wait for resume
@@ -547,28 +556,17 @@ export class WaitBlockHandler implements BlockHandler {
           context,
         })
 
-        const resumedAt = new Date().toISOString()
-
         if (!resumeData) {
           logger.warn('User approval block timeout', { executionId, blockId: block.id })
           return {
-            pausedAt,
-            resumedAt,
-            triggerType: 'manual',
-            triggerConfig,
             status: 'timeout',
-            message: `User approval timed out after 3 minutes`,
           }
         }
 
         if (resumeData.cancelled) {
           logger.info('User approval cancelled via registry', { executionId, blockId: block.id })
           return {
-            pausedAt,
-            resumedAt,
-            triggerType: 'manual',
             status: 'cancelled',
-            message: `User approval cancelled`,
           }
         }
 
@@ -579,13 +577,8 @@ export class WaitBlockHandler implements BlockHandler {
         })
 
         return {
-          pausedAt,
-          resumedAt,
-          triggerType: 'manual',
-          triggerConfig,
-          resumeInput: resumeData || {},
+          webhook: resumeData || {},
           status: 'approved',
-          message: `User approved continuation`,
         }
       } else {
         throw new Error('Cannot process user approval block without execution ID and workflow ID')
@@ -594,10 +587,7 @@ export class WaitBlockHandler implements BlockHandler {
 
     // Default fallback
     return {
-      pausedAt,
-      triggerType: resumeTriggerType,
       status: 'completed',
-      message: `Wait block completed with trigger type: ${resumeTriggerType}`,
     }
   }
 }

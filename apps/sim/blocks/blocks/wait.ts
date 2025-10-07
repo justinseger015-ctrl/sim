@@ -131,6 +131,17 @@ export const WaitBlock: BlockConfig = {
       placeholder: '{\n  "event": "workflow_paused",\n  "resumeUrl": "{{resumeUrl}}",\n  "workflowId": "{{workflowId}}",\n  "executionId": "{{executionId}}"\n}',
       condition: { field: 'resumeTriggerType', value: 'webhook' },
     },
+    // Mock response for client-side testing
+    {
+      id: 'mockResponse',
+      title: '🧪 Mock Response (Testing)',
+      type: 'code',
+      layout: 'full',
+      language: 'json',
+      description: 'Optional: Mock webhook data for manual runs from the client. When filled, the wait block will immediately continue with this data instead of waiting for a real webhook. Note: Notification webhooks will NOT be sent when using mock response.',
+      placeholder: '{\n  "status": "approved",\n  "userId": "123",\n  "comment": "Looks good!"\n}',
+      condition: { field: 'resumeTriggerType', value: 'webhook' },
+    },
   ],
   tools: {
     access: [],
@@ -172,47 +183,23 @@ export const WaitBlock: BlockConfig = {
       type: 'json',
       description: 'Body to send with the webhook',
     },
+    mockResponse: {
+      type: 'json',
+      description: 'Mock webhook data for client-side testing',
+    },
   },
   outputs: {
-    pausedAt: {
-      type: 'string',
-      description: 'ISO timestamp when wait started',
-    },
-    resumedAt: {
-      type: 'string',
-      description: 'ISO timestamp when wait completed (for time-based waits)',
-    },
-    resumeInput: {
+    webhook: {
       type: 'json',
-      description: 'Input data provided when resuming via webhook',
-    },
-    triggerType: {
-      type: 'string',
-      description: 'Type of trigger used (time or webhook)',
-    },
-    resumeUrl: {
-      type: 'string',
-      description: 'Unique webhook URL to resume this specific execution (only for webhook trigger)',
+      description: 'Payload data from the webhook that resumed the workflow. When using mock response in client testing, this contains the mock data.',
     },
     waitDuration: {
       type: 'number',
-      description: 'Actual wait duration in milliseconds (only for time-based waits)',
+      description: 'Wait duration in milliseconds (for time-based waits)',
     },
     status: {
       type: 'string',
-      description: 'Status of the wait block (waiting, resumed, completed)',
-    },
-    message: {
-      type: 'string',
-      description: 'Human-readable status message',
-    },
-    webhookSent: {
-      type: 'boolean',
-      description: 'Whether a webhook was successfully sent (only for webhook trigger)',
-    },
-    webhookResponse: {
-      type: 'json',
-      description: 'Response from the webhook endpoint (only for webhook trigger)',
+      description: 'Status of the wait block (waiting, resumed, completed, cancelled, timeout)',
     },
   },
 }

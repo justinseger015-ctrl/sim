@@ -241,6 +241,16 @@ export const UserApprovalBlock: BlockConfig = {
       value: () => 'UTC',
       condition: { field: 'resumeTriggerType', value: 'schedule' },
     },
+    // Mock response for client-side testing
+    {
+      id: 'mockResponse',
+      title: '🧪 Mock Response (Testing)',
+      type: 'code',
+      layout: 'full',
+      language: 'json',
+      description: 'Optional: Mock approval data for manual runs from the client. When filled, the approval block will immediately continue with this data instead of waiting. No external systems will be contacted.',
+      placeholder: '{\n  "approved": true,\n  "approver": "test-user",\n  "comment": "Test approval"\n}',
+    },
   ],
   tools: {
     access: [],
@@ -314,27 +324,23 @@ export const UserApprovalBlock: BlockConfig = {
       type: 'string',
       description: 'Timezone for schedule',
     },
+    mockResponse: {
+      type: 'json',
+      description: 'Mock approval data for client-side testing',
+    },
   },
   outputs: {
-    pausedAt: {
-      type: 'string',
-      description: 'ISO timestamp when execution was paused',
-    },
-    resumedAt: {
-      type: 'string',
-      description: 'ISO timestamp when execution was resumed (only available after resumption)',
-    },
-    resumeInput: {
+    webhook: {
       type: 'json',
-      description: 'Input data provided when resuming the workflow (approval data)',
+      description: 'Approval data provided when resuming. When using mock response in client testing, this contains the mock data.',
     },
-    triggerType: {
-      type: 'string',
-      description: 'Type of trigger used to resume (manual, api, webhook, schedule)',
+    waitDuration: {
+      type: 'number',
+      description: 'Wait duration in milliseconds',
     },
-    resumeUrl: {
+    status: {
       type: 'string',
-      description: 'Unique webhook URL to resume this specific execution (use in blocks before User Approval to send to external systems)',
+      description: 'Status of the approval (waiting, approved, rejected, timeout, cancelled)',
     },
   },
 }
