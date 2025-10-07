@@ -10,17 +10,14 @@ export const WaitBlock: BlockConfig = {
   name: 'Wait',
   description: 'Pause workflow execution with time delay or webhook trigger',
   longDescription:
-    'Pauses workflow execution for a specified time interval or until a webhook is received. Time-based waits execute a simple sleep. Webhook waits pause the workflow and provide two webhook capabilities: an incoming webhook URL to resume execution and an optional outgoing webhook to notify external systems when the workflow pauses.',
+    'Pauses workflow execution for a specified time interval or until a webhook is received. Time-based waits execute a simple sleep. Webhook waits generate a unique resume URL and optionally send notifications to external systems.',
   bestPractices: `
-  - Use "After Time Interval" to add delays between workflow steps (max 5 minutes)
-  - Use "On Webhook Call" to pause until an external system triggers resumption
-  - Resume Configuration: The unique webhook URL and secret for resuming this specific execution
-  - Notification Configuration: Optional webhook to notify external systems when workflow pauses
-  - Always set a webhook secret for security when using webhook triggers
-  - Add headers like Authorization, API keys, etc. in the Headers table
-  - Notification webhooks automatically retry on failure (5xx or 429 errors)
-  - Time-based waits are interruptible - cancelling the workflow will stop the wait
-  - All parallel branches complete before the workflow pauses at this block
+  - Use "After Time Interval" for simple delays (max 5 minutes)
+  - Use "On Webhook Call" to pause until an external webhook triggers resumption
+  - Always set a webhook secret for security
+  - Optionally configure a notification webhook to alert external systems when the workflow pauses
+  - Use mock response for client-side testing without triggering real webhooks
+  - Time-based waits are interruptible via workflow cancellation
   `,
   category: 'blocks',
   bgColor: '#F59E0B',
@@ -33,8 +30,8 @@ export const WaitBlock: BlockConfig = {
       layout: 'full',
       description: 'Select how this workflow should be resumed after pausing',
       options: [
-        { label: 'After Time Interval', id: 'time' },
-        { label: 'On Webhook Call', id: 'webhook' },
+        { label: 'Time Interval', id: 'time' },
+        { label: 'Webhook', id: 'webhook' },
       ],
       value: () => 'time',
     },
@@ -61,40 +58,32 @@ export const WaitBlock: BlockConfig = {
       value: () => 'seconds',
       condition: { field: 'resumeTriggerType', value: 'time' },
     },
-    // Resume webhook configuration (incoming)
-    {
-      id: 'webhookStatus',
-      title: '🔙 Resume Webhook URL',
-      type: 'wait-status',
-      layout: 'full',
-      description: 'The webhook URL will be generated when the workflow pauses',
-      condition: { field: 'resumeTriggerType', value: 'webhook' },
-    },
+    // Security
     {
       id: 'webhookSecret',
-      title: '🔑 Resume Webhook Secret',
+      title: 'Webhook Secret',
       type: 'short-input',
       layout: 'full',
-      description: 'Secret that must be provided in X-Sim-Secret header to resume',
-      placeholder: 'your-resume-secret',
+      description: 'Required secret for webhook authentication (X-Sim-Secret header)',
+      placeholder: 'your-secret-key',
       condition: { field: 'resumeTriggerType', value: 'webhook' },
       required: true,
     },
-    // Notification webhook configuration (outgoing)
+    // Notification webhook (optional)
     {
       id: 'webhookSendUrl',
-      title: '📤 Notification URL',
+      title: 'Notification Webhook URL',
       type: 'long-input',
       layout: 'full',
-      description: 'Optional: Send a webhook notification when workflow pauses',
-      placeholder: 'https://example.com/webhook',
+      description: 'Send a notification when workflow pauses (optional)',
+      placeholder: 'https://example.com/notify',
       condition: { field: 'resumeTriggerType', value: 'webhook' },
     },
     {
       id: 'webhookSendMethod',
-      title: 'HTTP Method',
+      title: 'Method',
       type: 'dropdown',
-      layout: 'full',
+      layout: 'half',
       options: [
         { label: 'POST', id: 'POST' },
         { label: 'PUT', id: 'PUT' },
@@ -104,12 +93,13 @@ export const WaitBlock: BlockConfig = {
       condition: { field: 'resumeTriggerType', value: 'webhook' },
     },
     {
-      id: 'webhookSendParams',
-      title: 'Query Params',
-      type: 'table',
+      id: 'webhookSendBody',
+      title: 'Body',
+      type: 'code',
       layout: 'full',
-      columns: ['Key', 'Value'],
-      description: 'URL query parameters to append',
+      language: 'json',
+      description: 'Use {{resumeUrl}}, {{workflowId}}, {{executionId}} as placeholders',
+      placeholder: '{\n  "resumeUrl": "{{resumeUrl}}"\n}',
       condition: { field: 'resumeTriggerType', value: 'webhook' },
     },
     {
@@ -118,28 +108,25 @@ export const WaitBlock: BlockConfig = {
       type: 'table',
       layout: 'full',
       columns: ['Key', 'Value'],
-      description: 'Headers to include (e.g., Authorization, Content-Type, API keys)',
       condition: { field: 'resumeTriggerType', value: 'webhook' },
     },
     {
-      id: 'webhookSendBody',
-      title: 'Notification Body',
-      type: 'code',
+      id: 'webhookSendParams',
+      title: 'Query Parameters',
+      type: 'table',
       layout: 'full',
-      language: 'json',
-      description: 'JSON body to send. Use {{resumeUrl}}, {{workflowId}}, {{executionId}} as templates.',
-      placeholder: '{\n  "event": "workflow_paused",\n  "resumeUrl": "{{resumeUrl}}",\n  "workflowId": "{{workflowId}}",\n  "executionId": "{{executionId}}"\n}',
+      columns: ['Key', 'Value'],
       condition: { field: 'resumeTriggerType', value: 'webhook' },
     },
-    // Mock response for client-side testing
+    // Testing
     {
       id: 'mockResponse',
-      title: '🧪 Mock Response (Testing)',
+      title: 'Mock Response',
       type: 'code',
       layout: 'full',
       language: 'json',
-      description: 'Optional: Mock webhook data for manual runs from the client. When filled, the wait block will immediately continue with this data instead of waiting for a real webhook. Note: Notification webhooks will NOT be sent when using mock response.',
-      placeholder: '{\n  "status": "approved",\n  "userId": "123",\n  "comment": "Looks good!"\n}',
+      description: 'For client testing: provide mock data to skip waiting',
+      placeholder: '{\n  "approved": true\n}',
       condition: { field: 'resumeTriggerType', value: 'webhook' },
     },
   ],
