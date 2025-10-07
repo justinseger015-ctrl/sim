@@ -27,8 +27,8 @@ const initRedis = async () => {
   return getRedisClient?.()
 }
 
-// Timeout for waiting on Redis (5 minutes max for webhook-based waits)
-const WAIT_TIMEOUT_SECONDS = 300
+// Timeout for waiting on Redis (3 minutes to match HTTP sync timeout)
+const WAIT_TIMEOUT_SECONDS = 180
 
 interface WaitInfo {
   workflowId: string
@@ -70,16 +70,23 @@ export class ExecutionRegistry {
   }
 
   /**
-   * Get the Redis key for storing resume data/signal
+   * Get the Redis list key for resume signaling (using BLPOP for true blocking)
    */
   private getResumeDataKey(executionId: string): string {
     return `execution:resume:${executionId}`
   }
 
   /**
+   * Get the Redis channel name for pub/sub notifications
+   */
+  private getChannelName(executionId: string): string {
+    return `execution:channel:${executionId}`
+  }
+
+  /**
    * Register a waiting execution and sleep until resumed.
    * This blocks the current thread until the execution is resumed via webhook/API.
-   * Uses polling approach for better compatibility with serverless environments.
+   * Uses Redis BLPOP for true blocking - thread sleeps until signaled or timeout (3 min).
    * 
    * @param waitInfo Information about the waiting execution
    * @returns Resume data when execution is woken up, or null if timeout
@@ -119,51 +126,47 @@ export class ExecutionRegistry {
         waitInfoJson
       )
 
-      logger.info('Waiting execution registered in Redis, now sleeping', {
+      logger.info('Waiting execution registered in Redis, now blocking', {
         executionId,
         timeout: WAIT_TIMEOUT_SECONDS,
       })
 
-      // Poll for resume signal using short intervals
-      // This is more compatible with serverless than blocking operations
-      const startTime = Date.now()
-      const pollIntervalMs = 500 // Poll every 500ms
+      // Use Redis BLPOP for true blocking - thread sleeps until signaled or timeout
       const resumeKey = this.getResumeDataKey(executionId)
 
-      while (true) {
-        // Check if we've exceeded timeout
-        const elapsed = Date.now() - startTime
-        if (elapsed >= WAIT_TIMEOUT_SECONDS * 1000) {
-          logger.warn('Wait timeout reached', { executionId, elapsed })
+      try {
+        // BLPOP blocks until an item is available or timeout
+        // Returns [key, value] or null on timeout
+        const result = await redis.blpop(resumeKey, WAIT_TIMEOUT_SECONDS)
+
+        if (!result) {
+          // Timeout reached
+          logger.warn('Wait timeout reached', { executionId })
           await redis.del(this.getWaitInfoKey(executionId))
           return null
         }
 
-        // Check for resume signal
-        const resumeDataJson = await redis.get(resumeKey)
-        if (resumeDataJson) {
-          logger.info('Resume signal received', { executionId })
-          
-          // Parse resume data
-          let resumeData = {}
-          try {
-            resumeData = JSON.parse(resumeDataJson)
-          } catch (error) {
-            logger.warn('Failed to parse resume data, using empty data', { error })
-          }
+        const [, resumeDataJson] = result
+        logger.info('Resume signal received via BLPOP', { executionId })
 
-          // Clean up
-          await Promise.all([
-            redis.del(this.getWaitInfoKey(executionId)),
-            redis.del(resumeKey),
-          ])
-
-          logger.info('Execution resumed', { executionId, hasResult: !!resumeData })
-          return resumeData
+        // Parse resume data
+        let resumeData = {}
+        try {
+          resumeData = JSON.parse(resumeDataJson)
+        } catch (error) {
+          logger.warn('Failed to parse resume data, using empty data', { error })
         }
 
-        // Sleep before next poll
-        await new Promise(resolve => setTimeout(resolve, pollIntervalMs))
+        // Clean up wait info
+        await redis.del(this.getWaitInfoKey(executionId))
+
+        logger.info('Execution resumed', { executionId, hasResult: !!resumeData })
+        return resumeData
+
+      } catch (error) {
+        logger.error('Error during BLPOP wait', { error, executionId })
+        await redis.del(this.getWaitInfoKey(executionId))
+        return null
       }
 
     } catch (error) {
@@ -231,15 +234,14 @@ export class ExecutionRegistry {
         return false
       }
 
-      // Set resume data with expiry (should be picked up quickly by polling thread)
+      // Push resume data to Redis list (wakes up BLPOP immediately)
       const resumeKey = this.getResumeDataKey(executionId)
-      await redis.setex(
-        resumeKey,
-        60, // 60 second expiry is plenty for polling to pick it up
-        JSON.stringify(resumeData)
-      )
+      await redis.rpush(resumeKey, JSON.stringify(resumeData))
 
-      logger.info('Set resume signal', {
+      // Set expiry on the list in case the waiting thread died
+      await redis.expire(resumeKey, 60)
+
+      logger.info('Pushed resume signal to list', {
         executionId,
         resumeKey,
       })

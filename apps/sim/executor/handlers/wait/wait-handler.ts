@@ -415,9 +415,9 @@ export class WaitBlockHandler implements BlockHandler {
         }
       }
 
-      // For deployed contexts (server-side executions), use execution registry to sleep
-      if (context.isDeployedContext && executionId && workflowId) {
-        logger.info('Wait block entering sleep mode (deployed context)', {
+      // Always use Redis-based sleep/wake for webhook wait blocks
+      if (executionId && workflowId) {
+        logger.info('Wait block entering sleep mode via Redis', {
           executionId,
           workflowId,
           blockId: block.id,
@@ -426,161 +426,158 @@ export class WaitBlockHandler implements BlockHandler {
         // Get execution registry (server-side only)
         const registry = await getExecutionRegistry()
         
-        if (registry) {
-          // Register and wait for resume
-          const resumeData = await registry.waitForResume({
-            workflowId,
-            executionId,
-            blockId: block.id,
-            pausedAt,
-            resumeUrl,
-            triggerType: 'webhook',
-            context,
-          })
+        if (!registry) {
+          throw new Error('Redis execution registry not available - cannot process wait block')
+        }
 
-          const resumedAt = new Date().toISOString()
+        // DO NOT set pause flags here - we're handling the wait ourselves via Redis BLPOP
+        // If we set shouldPauseAfterBlock, the executor will return early and break parent/child waiting
+        
+        // Register and wait for resume
+        const resumeData = await registry.waitForResume({
+          workflowId,
+          executionId,
+          blockId: block.id,
+          pausedAt,
+          resumeUrl,
+          triggerType: 'webhook',
+          context,
+        })
 
-          if (!resumeData) {
-            // Timeout or cancellation
-            logger.warn('Wait block timeout or cancelled', { executionId, blockId: block.id })
-            return {
-              pausedAt,
-              resumedAt,
-              triggerType: 'webhook',
-              triggerConfig,
-              resumeUrl,
-              status: 'timeout',
-              message: `Wait block timed out after 5 minutes`,
-              webhookSent,
-              webhookResponse,
-              ...(webhookError && { webhookError }),
-            }
-          }
+        const resumedAt = new Date().toISOString()
 
-          // Check if cancelled
-          if (resumeData.cancelled) {
-            logger.info('Wait block cancelled via registry', { executionId, blockId: block.id })
-            return {
-              pausedAt,
-              resumedAt,
-              triggerType: 'webhook',
-              status: 'cancelled',
-              message: `Wait block cancelled`,
-              webhookSent,
-              webhookResponse,
-              ...(webhookError && { webhookError }),
-            }
-          }
-
-          // Successfully resumed via Redis - execution already continued!
-          // Clear any pause flags since we handled the wait ourselves
-          delete (context as any).shouldPauseAfterBlock
-          delete (context as any).pauseReason
-          delete (context as any).waitBlockInfo
-          
-          logger.info('Wait block successfully resumed via Redis', {
-            executionId,
-            blockId: block.id,
-            hasResumeData: !!resumeData,
-          })
-
+        if (!resumeData) {
+          // Timeout or cancellation
+          logger.warn('Wait block timeout or cancelled', { executionId, blockId: block.id })
           return {
             pausedAt,
             resumedAt,
             triggerType: 'webhook',
             triggerConfig,
             resumeUrl,
-            resumeInput: resumeData || {},
-            status: 'resumed',
-            message: `Workflow resumed via webhook`,
+            status: 'timeout',
+            message: `Wait block timed out after 3 minutes`,
             webhookSent,
             webhookResponse,
             ...(webhookError && { webhookError }),
           }
-        } else {
-          logger.warn('Execution registry not available, falling back to pause mechanism')
-          // Fall through to old pause mechanism below
         }
-      }
 
-      // For non-deployed contexts (manual executions) or if registry not available,
-      // use the old pause mechanism (save to DB)
-      logger.info('Wait block using pause mechanism (non-deployed or registry unavailable)', {
-        isDeployedContext: context.isDeployedContext,
-        executionId,
-      })
+        // Check if cancelled
+        if (resumeData.cancelled) {
+          logger.info('Wait block cancelled via registry', { executionId, blockId: block.id })
+          return {
+            pausedAt,
+            resumedAt,
+            triggerType: 'webhook',
+            status: 'cancelled',
+            message: `Wait block cancelled`,
+            webhookSent,
+            webhookResponse,
+            ...(webhookError && { webhookError }),
+          }
+        }
 
-      // Store wait block information in context metadata for DB pause
-      if (!context.metadata) {
-        logger.warn('Context metadata missing, initializing new metadata object')
-        context.metadata = { duration: 0 }
-      }
+        // Successfully resumed via Redis - execution continues normally
+        logger.info('Wait block successfully resumed via Redis', {
+          executionId,
+          blockId: block.id,
+          hasResumeData: !!resumeData,
+        })
 
-      // Add wait block information to metadata
-      const waitBlockInfo = {
-        blockId: block.id,
-        blockName: block.metadata?.name || 'Wait',
-        pausedAt,
-        description: '',
-        triggerConfig,
-      }
-
-      // Store in context for the pause handler to access
-      ;(context as any).waitBlockInfo = waitBlockInfo
-
-      // Mark that execution should pause (only for DB-based pause)
-      ;(context as any).shouldPauseAfterBlock = true
-      ;(context as any).pauseReason = 'wait_block'
-
-      logger.info(`Wait block will pause execution after this block completes`, {
-        blockId: block.id,
-        blockName: block.metadata?.name,
-      })
-
-      // Return output that indicates this is a wait block (old pause mechanism)
-      return {
-        pausedAt,
-        triggerType: 'webhook',
-        triggerConfig,
-        resumeUrl,
-        status: 'waiting',
-        message: `Workflow paused at ${block.metadata?.name || 'Wait block'}. Resume via webhook call.`,
-        webhookSent,
-        webhookResponse,
-        ...(webhookError && { webhookError }),
+        return {
+          pausedAt,
+          resumedAt,
+          triggerType: 'webhook',
+          triggerConfig,
+          resumeUrl,
+          resumeInput: resumeData || {},
+          status: 'resumed',
+          message: `Workflow resumed via webhook`,
+          webhookSent,
+          webhookResponse,
+          ...(webhookError && { webhookError }),
+        }
+      } else {
+        throw new Error('Cannot process wait block without execution ID and workflow ID')
       }
     }
 
-    // For user_approval blocks, always use the manual pause mechanism
+    // For user_approval blocks, also use Redis-based sleep/wake
     if (block.metadata?.id === 'user_approval') {
       const triggerConfig: Record<string, any> = {
         type: 'manual',
-        description: '',
+        description: inputs.waitDescription || 'Workflow paused for user approval',
       }
 
-      // Store wait block information
-      if (!context.metadata) {
-        context.metadata = { duration: 0 }
-      }
+      const executionId = context.executionId
+      const workflowId = context.workflowId
 
-      const waitBlockInfo = {
-        blockId: block.id,
-        blockName: block.metadata?.name || 'User Approval',
-        pausedAt,
-        description: '',
-        triggerConfig,
-      }
+      if (executionId && workflowId) {
+        logger.info('User approval block entering sleep mode via Redis', {
+          executionId,
+          workflowId,
+          blockId: block.id,
+        })
 
-      ;(context as any).waitBlockInfo = waitBlockInfo
-      ;(context as any).shouldPauseAfterBlock = true
-      ;(context as any).pauseReason = 'wait_block'
+        const registry = await getExecutionRegistry()
+        if (!registry) {
+          throw new Error('Redis execution registry not available - cannot process user approval block')
+        }
 
-      return {
-        pausedAt,
-        triggerType: 'manual',
-        triggerConfig,
-        status: 'waiting',
-        message: `Workflow paused at ${block.metadata?.name || 'User Approval block'}. Resume via manual trigger.`,
+        // Register and wait for resume
+        const resumeData = await registry.waitForResume({
+          workflowId,
+          executionId,
+          blockId: block.id,
+          pausedAt,
+          resumeUrl: '', // User approval doesn't use webhook URLs
+          triggerType: 'manual',
+          context,
+        })
+
+        const resumedAt = new Date().toISOString()
+
+        if (!resumeData) {
+          logger.warn('User approval block timeout', { executionId, blockId: block.id })
+          return {
+            pausedAt,
+            resumedAt,
+            triggerType: 'manual',
+            triggerConfig,
+            status: 'timeout',
+            message: `User approval timed out after 3 minutes`,
+          }
+        }
+
+        if (resumeData.cancelled) {
+          logger.info('User approval cancelled via registry', { executionId, blockId: block.id })
+          return {
+            pausedAt,
+            resumedAt,
+            triggerType: 'manual',
+            status: 'cancelled',
+            message: `User approval cancelled`,
+          }
+        }
+
+        logger.info('User approval block successfully resumed via Redis', {
+          executionId,
+          blockId: block.id,
+          hasResumeData: !!resumeData,
+        })
+
+        return {
+          pausedAt,
+          resumedAt,
+          triggerType: 'manual',
+          triggerConfig,
+          resumeInput: resumeData || {},
+          status: 'approved',
+          message: `User approved continuation`,
+        }
+      } else {
+        throw new Error('Cannot process user approval block without execution ID and workflow ID')
       }
     }
 

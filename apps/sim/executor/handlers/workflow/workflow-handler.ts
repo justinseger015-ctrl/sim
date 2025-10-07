@@ -127,6 +127,10 @@ export class WorkflowBlockHandler implements BlockHandler {
       // Remove the workflowId from the input to avoid confusion
       const { workflowId: _, input: __, ...otherInputs } = inputs
 
+      // Generate a unique execution ID for the child workflow
+      const { v4: uuidv4 } = await import('uuid')
+      const childExecutionId = uuidv4()
+      
       // Execute child workflow inline
       const subExecutor = new Executor({
         workflow: childWorkflow.serializedState,
@@ -134,6 +138,8 @@ export class WorkflowBlockHandler implements BlockHandler {
         envVarValues: context.environmentVariables,
         workflowVariables: childWorkflow.variables || {},
         contextExtensions: {
+          executionId: childExecutionId, // Child needs its own execution ID
+          workspaceId: context.workspaceId, // Inherit workspace from parent
           isChildExecution: true, // Prevent child executor from managing global state
           // Propagate deployed context down to child execution so nested children obey constraints
           isDeployedContext: context.isDeployedContext === true,
@@ -156,31 +162,10 @@ export class WorkflowBlockHandler implements BlockHandler {
       const executionResult = this.toExecutionResult(result)
       const duration = performance.now() - startTime
 
-      // Check if child workflow paused
-      const childContext = (subExecutor as any).currentContext
-      const resultMetadata = 'metadata' in result ? result.metadata : undefined
-      if (childContext && ((childContext as any).shouldPauseAfterBlock || resultMetadata?.isPaused)) {
-        logger.info(`Child workflow ${childWorkflowName} paused, parent workflow must also pause`)
-        
-        // Propagate the pause up to the parent workflow
-        ;(context as any).shouldPauseAfterBlock = true
-        ;(context as any).pauseReason = 'child_workflow_paused'
-        ;(context as any).childWorkflowPauseInfo = {
-          childWorkflowId: workflowId,
-          childWorkflowName,
-          childExecutionId: childContext.executionId,
-          parentBlockId: block.id,
-        }
-        
-        // Return a special output indicating the child workflow paused
-        return {
-          success: true,
-          childWorkflowName,
-          childWorkflowId: workflowId,
-          paused: true,
-          message: `Child workflow "${childWorkflowName}" paused and will resume later`,
-        } as Record<string, any>
-      }
+      // With Redis sleep/wake, child workflows handle their own waits internally using BLPOP.
+      // The parent workflow naturally waits because the await on line 143 blocks until 
+      // the child's executor.execute() call completes (including any Redis waits).
+      // No need to propagate pauses or return early.
 
       logger.info(`Child workflow ${childWorkflowName} completed in ${Math.round(duration)}ms`)
 
