@@ -885,6 +885,15 @@ export class WaitBlockHandler implements BlockHandler {
           // This allows the block to show properly in the editor UI
           const responseData = this.parseApiResponseData(inputs, resumeUrl)
           
+          // If custom response is configured, return only that
+          // Otherwise return default fields + response data
+          const hasCustomResponse = (inputs.apiResponseMode === 'json' && inputs.apiEditorResponse) ||
+                                    (inputs.apiResponseMode === 'structured' && inputs.apiBuilderResponse)
+          
+          if (hasCustomResponse && Object.keys(responseData).length > 0) {
+            return responseData
+          }
+          
           return {
             resumeUrl,
             waitDuration: 0, // Not yet resumed
@@ -1010,13 +1019,22 @@ export class WaitBlockHandler implements BlockHandler {
         // Return the configured response structure using Response block logic
         const responseData = this.parseApiResponseData(inputs, resumeUrl)
         
+        // If custom response is configured, return only that
+        // Otherwise return default fields
+        const hasCustomResponse = (inputs.apiResponseMode === 'json' && inputs.apiEditorResponse) ||
+                                  (inputs.apiResponseMode === 'structured' && inputs.apiBuilderResponse)
+        
+        const responseBody = hasCustomResponse && Object.keys(responseData).length > 0
+          ? responseData
+          : {
+              resumeUrl,
+              ...responseData,
+            }
+        
         // Return as 'apiResponse' so the execute route knows to handle it like Response block
         return {
           apiResponse: {
-            data: {
-              resumeUrl,
-              ...responseData,
-            },
+            data: responseBody,
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
