@@ -47,6 +47,13 @@ export async function POST(
     })
     
     const waitInfo = await executionRegistry.getWaitInfo(executionId, blockId)
+    logger.debug(`[${requestId}] getWaitInfo result`, {
+      executionId,
+      blockId,
+      found: !!waitInfo,
+      waitInfo: waitInfo ? { workflowId: waitInfo.workflowId, triggerType: waitInfo.triggerType } : null,
+    })
+    
     if (waitInfo) {
       logger.info(`[${requestId}] Found waiting block in registry, waking it up`, {
         executionId,

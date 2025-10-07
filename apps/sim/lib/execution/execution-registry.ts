@@ -6,22 +6,29 @@ const logger = createLogger('ExecutionRegistry')
 // Server-side only imports
 let Redis: any = null
 let getRedisClient: any = null
+let getBlockingRedisClient: any = null
 
 // Dynamically import Redis only on server-side
-const initRedis = async () => {
+const initRedis = async (forBlocking = false) => {
   if (typeof window !== 'undefined') {
     return null
   }
   
-  if (!Redis || !getRedisClient) {
+  if (!Redis || !getRedisClient || !getBlockingRedisClient) {
     try {
       const redisModule = await import('@/lib/redis')
       getRedisClient = redisModule.getRedisClient
+      getBlockingRedisClient = redisModule.getBlockingRedisClient
       Redis = (await import('ioredis')).default
     } catch (error) {
       logger.error('Failed to import Redis', { error })
       return null
     }
+  }
+  
+  // Use blocking client for BLPOP operations
+  if (forBlocking) {
+    return getBlockingRedisClient?.()
   }
   
   return getRedisClient?.()
@@ -148,13 +155,20 @@ export class ExecutionRegistry {
         key: waitKey,
       })
 
+      // Use a separate blocking client for BLPOP to avoid blocking the main connection
+      const blockingRedis = await initRedis(true)
+      if (!blockingRedis) {
+        logger.error('Blocking Redis client not available, falling back to in-memory')
+        return this.waitForResumeInMemory(waitInfo)
+      }
+
       // Use Redis BLPOP for true blocking - thread sleeps until signaled or timeout
       const resumeKey = this.getResumeDataKey(executionId, blockId)
 
       try {
         // BLPOP blocks until an item is available or timeout
         // Returns [key, value] or null on timeout
-        const result = await redis.blpop(resumeKey, WAIT_TIMEOUT_SECONDS)
+        const result = await blockingRedis.blpop(resumeKey, WAIT_TIMEOUT_SECONDS)
 
         if (!result) {
           // Timeout reached
@@ -164,7 +178,11 @@ export class ExecutionRegistry {
         }
 
         const [, resumeDataJson] = result
-        logger.info('Resume signal received via BLPOP', { executionId })
+        logger.info('Resume signal received via BLPOP', { 
+          executionId, 
+          blockId,
+          dataLength: resumeDataJson ? resumeDataJson.length : 0,
+        })
 
         // Parse resume data
         let resumeData = {}
@@ -244,17 +262,19 @@ export class ExecutionRegistry {
     }
 
     try {
-      // Check if wait info exists
-      const waitInfoJson = await redis.get(this.getWaitInfoKey(executionId, blockId))
-
-      if (!waitInfoJson) {
-        logger.warn('No waiting execution found for resume', { executionId, blockId })
-        return false
-      }
-
-      // Push resume data to Redis list (wakes up BLPOP immediately)
+      // Push resume data to Redis list (wakes up BLPOP immediately if waiting)
+      // No need to check if wait exists first - RPUSH will succeed either way,
+      // and BLPOP will only wake up if it's actually waiting
       const resumeKey = this.getResumeDataKey(executionId, blockId)
-      await redis.rpush(resumeKey, JSON.stringify(resumeData))
+      logger.debug('Pushing resume data to Redis list', {
+        resumeKey,
+        executionId,
+        blockId,
+        dataLength: JSON.stringify(resumeData).length,
+      })
+      
+      const pushResult = await redis.rpush(resumeKey, JSON.stringify(resumeData))
+      logger.debug('RPUSH result', { pushResult, resumeKey })
 
       // Set expiry on the list in case the waiting thread died
       await redis.expire(resumeKey, 60)
@@ -263,6 +283,7 @@ export class ExecutionRegistry {
         executionId,
         blockId,
         resumeKey,
+        listLength: pushResult,
       })
 
       return true
@@ -308,10 +329,26 @@ export class ExecutionRegistry {
     }
 
     try {
-      const waitInfoJson = await redis.get(this.getWaitInfoKey(executionId, blockId))
+      const key = this.getWaitInfoKey(executionId, blockId)
+      logger.debug('Getting wait info from Redis', { key, executionId, blockId })
+      
+      // Add timeout to prevent hanging
+      const waitInfoJson = await Promise.race([
+        redis.get(key),
+        new Promise<null>((resolve) => setTimeout(() => {
+          logger.warn('Redis GET timeout after 5 seconds', { key })
+          resolve(null)
+        }, 5000))
+      ])
+      
+      logger.debug('Wait info result from Redis', { 
+        key, 
+        found: !!waitInfoJson,
+        dataLength: waitInfoJson ? waitInfoJson.length : 0,
+      })
       return waitInfoJson ? JSON.parse(waitInfoJson) : null
     } catch (error) {
-      logger.error('Error getting wait info', { error, executionId })
+      logger.error('Error getting wait info', { error, executionId, blockId })
       return null
     }
   }

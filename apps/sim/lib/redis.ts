@@ -10,6 +10,9 @@ const redisUrl = env.REDIS_URL
 // Global Redis client for connection pooling
 let globalRedisClient: Redis | null = null
 
+// Separate client for blocking operations (BLPOP) to avoid blocking main connection
+let blockingRedisClient: Redis | null = null
+
 // Fallback in-memory cache for when Redis is not available
 const inMemoryCache = new Map<string, { value: string; expiry: number | null }>()
 const MAX_CACHE_SIZE = 1000
@@ -61,6 +64,40 @@ export function getRedisClient(): Redis | null {
     return globalRedisClient
   } catch (error) {
     logger.error('Failed to initialize Redis client:', { error })
+    return null
+  }
+}
+
+/**
+ * Get a dedicated Redis client for blocking operations (BLPOP)
+ * This prevents BLPOP from blocking the main connection
+ */
+export function getBlockingRedisClient(): Redis | null {
+  // For server-side only
+  if (typeof window !== 'undefined') return null
+
+  // Return null immediately if no Redis URL is configured
+  if (!redisUrl) {
+    return null
+  }
+
+  if (blockingRedisClient) return blockingRedisClient
+
+  try {
+    const mainClient = getRedisClient()
+    if (!mainClient) return null
+
+    // Duplicate the main client's connection for blocking operations
+    blockingRedisClient = mainClient.duplicate()
+    
+    blockingRedisClient.on('error', (err: any) => {
+      logger.error('Blocking Redis client error:', { err })
+    })
+
+    logger.info('Blocking Redis client initialized successfully')
+    return blockingRedisClient
+  } catch (error) {
+    logger.error('Failed to initialize blocking Redis client:', { error })
     return null
   }
 }
@@ -245,3 +282,5 @@ export async function closeRedisConnection(): Promise<void> {
     }
   }
 }
+
+
