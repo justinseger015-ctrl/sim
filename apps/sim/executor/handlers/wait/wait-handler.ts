@@ -7,8 +7,10 @@ import { retryWithExponentialBackoff } from '@/lib/knowledge/documents/utils'
 
 const logger = createLogger('WaitBlockHandler')
 
-// Server-side only import for execution registry
+// Server-side only imports
 let executionRegistry: any = null
+let pausedExecutionService: any = null
+
 const getExecutionRegistry = async () => {
   if (typeof window !== 'undefined') return null
   if (!executionRegistry) {
@@ -21,6 +23,20 @@ const getExecutionRegistry = async () => {
     }
   }
   return executionRegistry
+}
+
+const getPausedExecutionService = async () => {
+  if (typeof window !== 'undefined') return null
+  if (!pausedExecutionService) {
+    try {
+      const module = await import('@/lib/execution/paused-execution-service')
+      pausedExecutionService = module.pausedExecutionService
+    } catch (error) {
+      logger.error('Failed to import paused execution service', { error })
+      return null
+    }
+  }
+  return pausedExecutionService
 }
 
 // Helper function to sleep for a specified number of milliseconds with cancellation support
@@ -75,6 +91,42 @@ export class WaitBlockHandler implements BlockHandler {
       
       return {
         webhook: resumeInput || {},
+        status: 'resumed',
+      }
+    }
+
+    // Check if we're resuming from a human approval
+    if (isResuming && resumeTriggerType === 'human') {
+      logger.info(`Wait block resumed via human approval`, {
+        blockId: block.id,
+        blockName: block.metadata?.name,
+        hasResumeInput: !!resumeInput,
+        approved: resumeInput?.approved,
+        resumeInputKeys: resumeInput ? Object.keys(resumeInput) : [],
+      })
+      
+      // For user_approval blocks, return the approval status
+      if (block.metadata?.id === 'user_approval') {
+        const output = {
+          approved: resumeInput?.approved || false,
+          approveUrl: resumeInput?.approveUrl || '',
+          status: 'resumed',
+          webhook: {},
+          waitDuration: 0,
+          resumeUrl: resumeInput?.approveUrl || '',
+        }
+        
+        logger.info('Returning human approval output', {
+          blockId: block.id,
+          blockName: block.metadata?.name,
+          output,
+        })
+        
+        return output
+      }
+      
+      // For regular wait blocks with human mode (shouldn't happen but handle gracefully)
+      return {
         status: 'resumed',
       }
     }
@@ -499,13 +551,169 @@ export class WaitBlockHandler implements BlockHandler {
 
     // For user_approval blocks, also use Redis-based sleep/wake
     if (block.metadata?.id === 'user_approval') {
+      const executionId = context.executionId
+      const workflowId = context.workflowId
+
+      if (!executionId || !workflowId) {
+        throw new Error('Cannot process user approval block without execution ID and workflow ID')
+      }
+
+      // Handle "Human" resume type - one-time approval link
+      if (inputs.resumeTriggerType === 'human') {
+        // Check for mock response (testing mode)
+        const mockResponse = inputs.mockResponse
+        
+        if (mockResponse) {
+          logger.info('Human approval block using mock response (testing mode)', {
+            executionId,
+            workflowId,
+            blockId: block.id,
+          })
+          
+          // Parse mock response if it's a string
+          let mockData = mockResponse
+          if (typeof mockResponse === 'string') {
+            try {
+              mockData = JSON.parse(mockResponse)
+            } catch (error) {
+              logger.warn('Failed to parse mock response as JSON, using as-is', { error })
+            }
+          }
+          
+          return {
+            webhook: mockData || {},
+            approved: true,
+            status: 'approved',
+            approveUrl: 'mock://approval-url',
+          }
+        }
+
+        // Save execution state to database and generate approval URL
+        // This does NOT pause - it just saves and returns the URL
+        const baseUrl = getBaseUrl()
+        
+        if (!executionId || !workflowId) {
+          throw new Error('Execution ID and Workflow ID are required for Human in the Loop block')
+        }
+
+        let approveUrl: string
+        
+        // Try server-side service first (for server execution)
+        const pausedService = await getPausedExecutionService()
+        
+        if (pausedService) {
+          // Server-side execution - use service directly
+          try {
+            const result = await pausedService.savePausedExecution(
+              {
+                workflowId,
+                executionId,
+                blockId: block.id,
+                context,
+                pausedAt: new Date(pausedAt),
+              },
+              baseUrl
+            )
+            approveUrl = result.approveUrl
+
+            logger.info('Paused execution saved (server-side), approval URL generated', {
+              executionId,
+              workflowId,
+              approveUrl,
+              hasToken: !!result.approvalToken,
+            })
+          } catch (error) {
+            logger.error('Failed to save paused execution', {
+              error,
+              executionId,
+              workflowId,
+            })
+            throw new Error(`Failed to save paused execution state: ${error instanceof Error ? error.message : 'Unknown error'}`)
+          }
+        } else {
+          // Client-side execution - call API endpoint
+          logger.info('Client-side execution - calling API to save paused state', {
+            executionId,
+            workflowId,
+            blockId: block.id,
+            contextExecutedBlocks: context.executedBlocks ? Array.from(context.executedBlocks) : [],
+            contextActiveExecutionPath: context.activeExecutionPath ? Array.from(context.activeExecutionPath) : [],
+          })
+
+          try {
+            const response = await fetch('/api/execution/pause', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                workflowId,
+                executionId,
+                blockId: block.id,
+                context,
+                pausedAt: new Date(pausedAt).toISOString(),
+              }),
+            })
+
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}))
+              throw new Error(errorData.details || errorData.error || 'Failed to save paused execution')
+            }
+
+            const result = await response.json()
+            approveUrl = result.approveUrl
+
+            logger.info('Paused execution saved (client-side API), approval URL generated', {
+              executionId,
+              workflowId,
+              approveUrl,
+            })
+          } catch (error) {
+            logger.error('Failed to save paused execution via API', {
+              error,
+              executionId,
+              workflowId,
+            })
+            throw new Error(`Failed to save paused execution state: ${error instanceof Error ? error.message : 'Unknown error'}`)
+          }
+        }
+
+        // Signal to the executor to pause execution after this block
+        // This prevents the workflow from continuing to downstream blocks
+        ;(context as any).shouldPauseAfterBlock = true
+        ;(context as any).waitBlockInfo = {
+          blockId: block.id,
+          blockName: block.metadata?.name || 'Human in the Loop',
+          pausedAt: new Date(pausedAt).toISOString(),
+          description: 'Workflow paused for human approval',
+          triggerConfig: {
+            type: 'human',
+            approveUrl,
+          },
+        }
+
+        logger.info('Workflow will pause after Human in the Loop block', {
+          executionId,
+          workflowId,
+          blockId: block.id,
+          approveUrl,
+        })
+
+        // Return the approval URL - workflow will pause after this block
+        return {
+          approveUrl,
+          approved: false, // Not yet approved
+          status: 'pending_approval',
+          webhook: {},
+          waitDuration: 0,
+          resumeUrl: approveUrl, // Same as approveUrl for human mode
+        }
+      }
+
       const triggerConfig: Record<string, any> = {
         type: 'manual',
         description: inputs.waitDescription || 'Workflow paused for user approval',
       }
-
-      const executionId = context.executionId
-      const workflowId = context.workflowId
 
       if (executionId && workflowId) {
         // Check for mock response early (client-side testing mode)

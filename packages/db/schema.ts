@@ -337,6 +337,8 @@ export const pausedWorkflowExecutions = pgTable(
     environmentVariables: jsonb('environment_variables').notNull(), // Encrypted environment variables
     workflowInput: jsonb('workflow_input'), // Original workflow input
     metadata: jsonb('metadata').notNull().default('{}'), // Additional metadata (trigger type, etc.)
+    approvalToken: text('approval_token').unique(), // One-time token for human approval
+    approvalUsed: boolean('approval_used').default(false), // Whether the approval link has been used
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
@@ -345,6 +347,7 @@ export const pausedWorkflowExecutions = pgTable(
     executionIdIdx: index('paused_executions_execution_id_idx').on(table.executionId),
     userIdIdx: index('paused_executions_user_id_idx').on(table.userId),
     pausedAtIdx: index('paused_executions_paused_at_idx').on(table.pausedAt),
+    approvalTokenIdx: index('paused_executions_approval_token_idx').on(table.approvalToken),
     executionIdUnique: uniqueIndex('paused_executions_execution_id_unique').on(
       table.executionId
     ),

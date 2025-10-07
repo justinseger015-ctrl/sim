@@ -430,7 +430,7 @@ export async function executeWorkflow(
             waitBlockInfo: result.metadata?.waitBlockInfo,
             isDeployedContext: true,
             deploymentVersionId,
-            parentExecutionInfo: (executionResult.metadata?.context as any)?.parentExecutionInfo,
+            parentExecutionInfo: (result.metadata?.context as any)?.parentExecutionInfo,
           },
         })
         logger.info(`[${requestId}] Successfully persisted paused execution state`)

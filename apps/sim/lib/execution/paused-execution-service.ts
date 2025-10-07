@@ -1,0 +1,166 @@
+import { db } from '@sim/db'
+import { pausedWorkflowExecutions, workflow, workflowExecutionLogs } from '@sim/db/schema'
+import { eq } from 'drizzle-orm'
+import { randomUUID } from 'crypto'
+import { createLogger } from '@/lib/logs/console/logger'
+import type { ExecutionContext } from '@/executor/types'
+import { serializeExecutionContext } from './pause-resume-utils'
+
+const logger = createLogger('PausedExecutionService')
+
+export interface SavePausedExecutionParams {
+  workflowId: string
+  executionId: string
+  userId?: string  // Optional - will be fetched from workflow if not provided
+  blockId: string
+  context: ExecutionContext
+  pausedAt: Date
+}
+
+export interface PausedExecutionResult {
+  approvalToken: string
+  approveUrl: string
+}
+
+/**
+ * Service for managing paused workflow executions with human approval
+ * Server-side only - handles database operations for paused state
+ */
+export class PausedExecutionService {
+  private static instance: PausedExecutionService
+
+  private constructor() {}
+
+  static getInstance(): PausedExecutionService {
+    if (!PausedExecutionService.instance) {
+      PausedExecutionService.instance = new PausedExecutionService()
+    }
+    return PausedExecutionService.instance
+  }
+
+  /**
+   * Save a paused execution to the database and generate approval token
+   */
+  async savePausedExecution(params: SavePausedExecutionParams, baseUrl: string): Promise<PausedExecutionResult> {
+    const { workflowId, executionId, blockId, context, pausedAt } = params
+    let { userId } = params
+
+    // If userId not provided, fetch from workflow
+    if (!userId) {
+      const workflows = await db
+        .select({ userId: workflow.userId })
+        .from(workflow)
+        .where(eq(workflow.id, workflowId))
+        .limit(1)
+
+      if (!workflows.length) {
+        throw new Error(`Workflow ${workflowId} not found`)
+      }
+
+      userId = workflows[0].userId
+    }
+
+    // Generate unique approval token
+    const approvalToken = randomUUID()
+    const approveUrl = `${baseUrl}/approve/${approvalToken}`
+
+    logger.info('Saving paused execution state for human approval', {
+      executionId,
+      workflowId,
+      blockId,
+      userId,
+      contextExecutedBlocks: context.executedBlocks instanceof Set ? Array.from(context.executedBlocks) : context.executedBlocks,
+      contextActiveExecutionPath: context.activeExecutionPath instanceof Set ? Array.from(context.activeExecutionPath) : context.activeExecutionPath,
+    })
+
+    // Look up the original trigger type from the execution log
+    const [executionLog] = await db
+      .select({ trigger: workflowExecutionLogs.trigger })
+      .from(workflowExecutionLogs)
+      .where(eq(workflowExecutionLogs.executionId, executionId))
+      .limit(1)
+
+    const triggerType = executionLog?.trigger || 'manual'
+
+    // Serialize the execution context properly
+    // When coming from client-side API, Maps/Sets become plain objects during JSON.stringify
+    // We need to convert those objects back into the proper array format for storage
+    let serializedContext: any
+    
+    if (context.blockStates instanceof Map) {
+      // Server-side context with Maps/Sets - needs serialization
+      serializedContext = serializeExecutionContext(context)
+    } else {
+      // Client-side: Maps are already plain objects - convert to proper format
+      const blockStatesObj = context.blockStates as any
+      const blockStatesArray = Object.keys(blockStatesObj || {}).map(blockId => ({
+        blockId,
+        output: blockStatesObj[blockId]?.output || {},
+        executed: blockStatesObj[blockId]?.executed || false,
+        executionTime: blockStatesObj[blockId]?.executionTime || 0,
+      }))
+
+      const decisionsObj = context.decisions as any
+      const routerArray = decisionsObj?.router ? Object.entries(decisionsObj.router) : []
+      const conditionArray = decisionsObj?.condition ? Object.entries(decisionsObj.condition) : []
+
+      serializedContext = {
+        ...context,
+        blockStates: blockStatesArray,
+        decisions: {
+          router: routerArray,
+          condition: conditionArray,
+        },
+        loopIterations: context.loopIterations ? Object.entries(context.loopIterations as any) : [],
+        loopItems: context.loopItems ? Object.entries(context.loopItems as any) : [],
+        completedLoops: Array.isArray(context.completedLoops) ? context.completedLoops : [],
+        executedBlocks: Array.isArray(context.executedBlocks) ? context.executedBlocks : [],
+        activeExecutionPath: Array.isArray(context.activeExecutionPath) ? context.activeExecutionPath : [],
+      }
+    }
+
+    try {
+      // Save the paused execution state to the database
+      await db.insert(pausedWorkflowExecutions).values({
+        id: randomUUID(),
+        workflowId,
+        executionId,
+        userId,
+        pausedAt,
+        executionContext: serializedContext,
+        workflowState: context.workflow || {},
+        environmentVariables: context.environmentVariables || {},
+        workflowInput: null,
+        metadata: {
+          blockId,
+          resumeTriggerType: 'human',
+          triggerType, // Save the original trigger type
+          pausedAt: pausedAt.toISOString(),
+        },
+        approvalToken,
+        approvalUsed: false,
+      })
+
+      logger.info('Paused execution saved successfully', {
+        executionId,
+        workflowId,
+        approveUrl,
+      })
+
+      return {
+        approvalToken,
+        approveUrl,
+      }
+    } catch (error) {
+      logger.error('Failed to save paused execution', {
+        error,
+        executionId,
+        workflowId,
+      })
+      throw new Error('Failed to save paused execution state')
+    }
+  }
+}
+
+export const pausedExecutionService = PausedExecutionService.getInstance()
+

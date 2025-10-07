@@ -7,16 +7,17 @@ const UserApprovalIcon = (props: SVGProps<SVGSVGElement>) => createElement(UserC
 
 export const UserApprovalBlock: BlockConfig = {
   type: 'user_approval',
-  name: 'User Approval',
-  description: 'Pause workflow and wait for user approval',
+  name: 'Human in the Loop',
+  description: 'Pause workflow and wait for webhook trigger or time delay',
   longDescription:
-    'Pauses workflow execution and waits for manual approval from a user. Once approved (or rejected), the workflow continues with the approval decision. Perfect for human-in-the-loop workflows requiring manual review.',
+    'Pauses workflow execution for a specified time interval or until a webhook is received. Time-based waits execute a simple sleep. Webhook waits generate a unique resume URL and optionally send notifications to external systems. Perfect for human-in-the-loop workflows requiring manual review or external system coordination.',
   bestPractices: `
-  - Use User Approval blocks for workflows that require human review or decision-making
-  - Add a clear description explaining what needs to be approved
-  - Use input forms to collect approval comments or additional data
-  - Configure webhook triggers for external approval systems
-  - All parallel branches and loops will complete before the workflow pauses at this block
+  - Use "Time Interval" for simple delays (max 5 minutes)
+  - Use "Webhook" to pause until an external system or user triggers resumption
+  - Always set a webhook secret for security when using webhook mode
+  - Optionally configure a notification webhook to alert external systems when the workflow pauses
+  - Use mock response for client-side testing without triggering real webhooks
+  - Access the resumeUrl output to share the webhook URL with external systems
   `,
   category: 'blocks',
   bgColor: '#10B981',
@@ -24,232 +25,110 @@ export const UserApprovalBlock: BlockConfig = {
   subBlocks: [
     {
       id: 'resumeTriggerType',
-      title: 'Resume Trigger',
+      title: 'Resume Type',
       type: 'dropdown',
       layout: 'full',
       description: 'Select how this workflow should be resumed after pausing',
       options: [
-        { label: 'Manual', id: 'manual' },
-        { label: 'API', id: 'api' },
+        { label: 'Time Interval', id: 'time' },
         { label: 'Webhook', id: 'webhook' },
-        { label: 'Schedule', id: 'schedule' },
-        { label: 'Input Form', id: 'input' },
+        { label: 'Human', id: 'human' },
       ],
-      value: () => 'manual',
+      value: () => 'human',
     },
+    // Time interval configuration
     {
-      id: 'description',
-      title: 'Description',
-      type: 'long-input',
-      layout: 'full',
-      description: 'Optional description of what needs approval and what should trigger resumption',
-      placeholder: 'E.g., "Waiting for manager approval" or "Waiting for customer confirmation"',
-    },
-    // Manual trigger - show resume button in block UI
-    {
-      id: 'waitStatus',
-      title: 'Approval Status',
-      type: 'wait-status',
-      layout: 'full',
-      description: 'Current pause/approval status and controls',
-      condition: { field: 'resumeTriggerType', value: 'manual' },
-    },
-    // Input Form trigger configuration
-    {
-      id: 'inputInputFormat',
-      title: 'Input Format',
-      type: 'input-format',
-      layout: 'full',
-      description: 'Define the input schema for resuming with an input form',
-      condition: { field: 'resumeTriggerType', value: 'input' },
-    },
-    // API trigger configuration
-    {
-      id: 'apiInputFormat',
-      title: 'API Input Format',
-      type: 'input-format',
-      layout: 'full',
-      description: 'Define the JSON input schema for resuming via API',
-      condition: { field: 'resumeTriggerType', value: 'api' },
-    },
-    // Webhook configuration
-    {
-      id: 'webhookPath',
-      title: 'Webhook Path',
+      id: 'timeValue',
+      title: 'Wait Amount',
       type: 'short-input',
-      layout: 'full',
-      description: 'Custom path for the webhook URL (optional)',
-      placeholder: '/my-custom-path',
-      condition: { field: 'resumeTriggerType', value: 'webhook' },
+      layout: 'half',
+      description: 'How long to wait (max 5 minutes)',
+      placeholder: '10',
+      value: () => '10',
+      condition: { field: 'resumeTriggerType', value: 'time' },
     },
+    {
+      id: 'timeUnit',
+      title: 'Unit',
+      type: 'dropdown',
+      layout: 'half',
+      options: [
+        { label: 'Seconds', id: 'seconds' },
+        { label: 'Minutes', id: 'minutes' },
+      ],
+      value: () => 'seconds',
+      condition: { field: 'resumeTriggerType', value: 'time' },
+    },
+    // Security
     {
       id: 'webhookSecret',
       title: 'Webhook Secret',
       type: 'short-input',
       layout: 'full',
-      description: 'Secret for webhook authentication (optional)',
+      description: 'Required secret for webhook authentication (X-Sim-Secret header)',
       placeholder: 'your-secret-key',
       condition: { field: 'resumeTriggerType', value: 'webhook' },
+      required: true,
     },
+    // Notification webhook (optional)
     {
-      id: 'webhookInputFormat',
-      title: 'Webhook Input Format',
-      type: 'input-format',
+      id: 'webhookSendUrl',
+      title: 'Notification Webhook URL',
+      type: 'long-input',
       layout: 'full',
-      description: 'Define the JSON input schema expected from the webhook',
+      description: 'Send a notification when workflow pauses (optional)',
+      placeholder: 'https://example.com/notify',
       condition: { field: 'resumeTriggerType', value: 'webhook' },
     },
-    // Schedule configuration
     {
-      id: 'scheduleType',
-      title: 'Schedule Type',
+      id: 'webhookSendMethod',
+      title: 'Method',
       type: 'dropdown',
-      layout: 'full',
+      layout: 'half',
       options: [
-        { label: 'Every X Minutes', id: 'minutes' },
-        { label: 'Hourly', id: 'hourly' },
-        { label: 'Daily', id: 'daily' },
-        { label: 'Weekly', id: 'weekly' },
-        { label: 'Monthly', id: 'monthly' },
-        { label: 'Custom Cron', id: 'custom' },
+        { label: 'POST', id: 'POST' },
+        { label: 'PUT', id: 'PUT' },
+        { label: 'PATCH', id: 'PATCH' },
       ],
-      value: () => 'daily',
-      condition: { field: 'resumeTriggerType', value: 'schedule' },
+      value: () => 'POST',
+      condition: { field: 'resumeTriggerType', value: 'webhook' },
     },
     {
-      id: 'minutesInterval',
-      title: 'Interval (minutes)',
-      type: 'short-input',
-      layout: 'full',
-      placeholder: '5',
-      condition: {
-        field: 'resumeTriggerType',
-        value: 'schedule',
-        and: { field: 'scheduleType', value: 'minutes' },
-      },
-    },
-    {
-      id: 'hourlyMinute',
-      title: 'Minute (0-59)',
-      type: 'short-input',
-      layout: 'full',
-      placeholder: '0',
-      condition: {
-        field: 'resumeTriggerType',
-        value: 'schedule',
-        and: { field: 'scheduleType', value: 'hourly' },
-      },
-    },
-    {
-      id: 'dailyTime',
-      title: 'Time (HH:MM)',
-      type: 'short-input',
-      layout: 'full',
-      placeholder: '09:00',
-      condition: {
-        field: 'resumeTriggerType',
-        value: 'schedule',
-        and: { field: 'scheduleType', value: 'daily' },
-      },
-    },
-    {
-      id: 'weeklyDay',
-      title: 'Day of Week',
-      type: 'dropdown',
-      layout: 'full',
-      options: [
-        { label: 'Monday', id: 'MON' },
-        { label: 'Tuesday', id: 'TUE' },
-        { label: 'Wednesday', id: 'WED' },
-        { label: 'Thursday', id: 'THU' },
-        { label: 'Friday', id: 'FRI' },
-        { label: 'Saturday', id: 'SAT' },
-        { label: 'Sunday', id: 'SUN' },
-      ],
-      value: () => 'MON',
-      condition: {
-        field: 'resumeTriggerType',
-        value: 'schedule',
-        and: { field: 'scheduleType', value: 'weekly' },
-      },
-    },
-    {
-      id: 'weeklyTime',
-      title: 'Time (HH:MM)',
-      type: 'short-input',
-      layout: 'full',
-      placeholder: '09:00',
-      condition: {
-        field: 'resumeTriggerType',
-        value: 'schedule',
-        and: { field: 'scheduleType', value: 'weekly' },
-      },
-    },
-    {
-      id: 'monthlyDay',
-      title: 'Day of Month (1-31)',
-      type: 'short-input',
-      layout: 'full',
-      placeholder: '1',
-      condition: {
-        field: 'resumeTriggerType',
-        value: 'schedule',
-        and: { field: 'scheduleType', value: 'monthly' },
-      },
-    },
-    {
-      id: 'monthlyTime',
-      title: 'Time (HH:MM)',
-      type: 'short-input',
-      layout: 'full',
-      placeholder: '09:00',
-      condition: {
-        field: 'resumeTriggerType',
-        value: 'schedule',
-        and: { field: 'scheduleType', value: 'monthly' },
-      },
-    },
-    {
-      id: 'cronExpression',
-      title: 'Cron Expression',
-      type: 'short-input',
-      layout: 'full',
-      placeholder: '0 9 * * *',
-      condition: {
-        field: 'resumeTriggerType',
-        value: 'schedule',
-        and: { field: 'scheduleType', value: 'custom' },
-      },
-    },
-    {
-      id: 'scheduleTimezone',
-      title: 'Timezone',
-      type: 'dropdown',
-      layout: 'full',
-      options: [
-        { label: 'UTC', id: 'UTC' },
-        { label: 'US Eastern', id: 'America/New_York' },
-        { label: 'US Central', id: 'America/Chicago' },
-        { label: 'US Mountain', id: 'America/Denver' },
-        { label: 'US Pacific', id: 'America/Los_Angeles' },
-        { label: 'London', id: 'Europe/London' },
-        { label: 'Paris', id: 'Europe/Paris' },
-        { label: 'Singapore', id: 'Asia/Singapore' },
-        { label: 'Tokyo', id: 'Asia/Tokyo' },
-        { label: 'Sydney', id: 'Australia/Sydney' },
-      ],
-      value: () => 'UTC',
-      condition: { field: 'resumeTriggerType', value: 'schedule' },
-    },
-    // Mock response for client-side testing
-    {
-      id: 'mockResponse',
-      title: '🧪 Mock Response (Testing)',
+      id: 'webhookSendBody',
+      title: 'Body',
       type: 'code',
       layout: 'full',
       language: 'json',
-      description: 'Optional: Mock approval data for manual runs from the client. When filled, the approval block will immediately continue with this data instead of waiting. No external systems will be contacted.',
-      placeholder: '{\n  "approved": true,\n  "approver": "test-user",\n  "comment": "Test approval"\n}',
+      description: 'Use {{resumeUrl}}, {{workflowId}}, {{executionId}} as placeholders',
+      placeholder: '{\n  "resumeUrl": "{{resumeUrl}}"\n}',
+      condition: { field: 'resumeTriggerType', value: 'webhook' },
+    },
+    {
+      id: 'webhookSendHeaders',
+      title: 'Headers',
+      type: 'table',
+      layout: 'full',
+      columns: ['Key', 'Value'],
+      condition: { field: 'resumeTriggerType', value: 'webhook' },
+    },
+    {
+      id: 'webhookSendParams',
+      title: 'Query Parameters',
+      type: 'table',
+      layout: 'full',
+      columns: ['Key', 'Value'],
+      condition: { field: 'resumeTriggerType', value: 'webhook' },
+    },
+    // Testing
+    {
+      id: 'mockResponse',
+      title: 'Mock Response',
+      type: 'code',
+      layout: 'full',
+      language: 'json',
+      description: 'For client testing: provide mock data to skip waiting',
+      placeholder: '{\n  "approved": true\n}',
+      condition: { field: 'resumeTriggerType', value: 'webhook' },
     },
   ],
   tools: {
@@ -258,89 +137,69 @@ export const UserApprovalBlock: BlockConfig = {
   inputs: {
     resumeTriggerType: {
       type: 'string',
-      description: 'Type of trigger to resume execution',
+      description: 'Type of trigger to resume execution (time or webhook)',
     },
-    description: {
+    timeValue: {
       type: 'string',
-      description: 'Description of what needs approval',
+      description: 'Wait duration value',
     },
-    inputInputFormat: {
-      type: 'json',
-      description: 'Input format for input form trigger',
-    },
-    apiInputFormat: {
-      type: 'json',
-      description: 'Input format for API trigger',
-    },
-    webhookPath: {
+    timeUnit: {
       type: 'string',
-      description: 'Custom webhook path',
+      description: 'Wait duration unit (seconds or minutes)',
     },
     webhookSecret: {
       type: 'string',
-      description: 'Webhook authentication secret',
+      description: 'Webhook authentication secret for resuming',
     },
-    webhookInputFormat: {
+    webhookSendUrl: {
+      type: 'string',
+      description: 'URL to send webhook notification when pausing',
+    },
+    webhookSendMethod: {
+      type: 'string',
+      description: 'HTTP method for sending webhook',
+    },
+    webhookSendParams: {
       type: 'json',
-      description: 'Input format for webhook trigger',
+      description: 'Query parameters to send with the webhook',
     },
-    scheduleType: {
-      type: 'string',
-      description: 'Schedule type (minutes, hourly, daily, etc.)',
+    webhookSendHeaders: {
+      type: 'json',
+      description: 'Headers to send with the webhook',
     },
-    minutesInterval: {
-      type: 'string',
-      description: 'Interval in minutes',
-    },
-    hourlyMinute: {
-      type: 'string',
-      description: 'Minute of the hour (0-59)',
-    },
-    dailyTime: {
-      type: 'string',
-      description: 'Time of day (HH:MM)',
-    },
-    weeklyDay: {
-      type: 'string',
-      description: 'Day of the week',
-    },
-    weeklyTime: {
-      type: 'string',
-      description: 'Time on weekly day',
-    },
-    monthlyDay: {
-      type: 'string',
-      description: 'Day of the month (1-31)',
-    },
-    monthlyTime: {
-      type: 'string',
-      description: 'Time on monthly day',
-    },
-    cronExpression: {
-      type: 'string',
-      description: 'Custom cron expression',
-    },
-    scheduleTimezone: {
-      type: 'string',
-      description: 'Timezone for schedule',
+    webhookSendBody: {
+      type: 'json',
+      description: 'Body to send with the webhook',
     },
     mockResponse: {
       type: 'json',
-      description: 'Mock approval data for client-side testing',
+      description: 'Mock webhook data for client-side testing',
     },
   },
   outputs: {
     webhook: {
       type: 'json',
-      description: 'Approval data provided when resuming. When using mock response in client testing, this contains the mock data.',
+      description: 'Payload data from the webhook that resumed the workflow. When using mock response in client testing, this contains the mock data.',
     },
     waitDuration: {
       type: 'number',
-      description: 'Wait duration in milliseconds',
+      description: 'Wait duration in milliseconds (for time-based waits)',
     },
     status: {
       type: 'string',
-      description: 'Status of the approval (waiting, approved, rejected, timeout, cancelled)',
+      description: 'Status of the wait block (waiting, resumed, completed, cancelled, timeout)',
+    },
+    resumeUrl: {
+      type: 'string',
+      description: 'The unique URL that can be used to resume the workflow',
+    },
+    approveUrl: {
+      type: 'string',
+      description: 'One-time approval URL for human review (only available in Human mode)',
+    },
+    approved: {
+      type: 'boolean',
+      description: 'Whether the human approved (true) or rejected (false)',
     },
   },
 }

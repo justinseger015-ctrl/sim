@@ -377,11 +377,26 @@ export class Executor {
       let iteration = 0
       const maxIterations = 500
 
+      logger.info('Starting resume execution loop', {
+        executedBlocksCount: context.executedBlocks.size,
+        executedBlockIds: Array.from(context.executedBlocks),
+        hasResumeInput: !!(context as any).resumeInput,
+      })
+
       while (hasMoreLayers && iteration < maxIterations && !this.isCancelled && !this.isPaused) {
         const nextLayer = this.getNextExecutionLayer(context)
 
+        logger.info('Resume iteration', {
+          iteration,
+          nextLayerSize: nextLayer.length,
+          nextLayerBlockIds: nextLayer,
+        })
+
         if (nextLayer.length === 0) {
           hasMoreLayers = this.hasMoreParallelWork(context)
+          logger.info('No blocks in next layer', {
+            hasMoreParallelWork: hasMoreLayers,
+          })
         } else {
           const outputs = await this.executeLayer(nextLayer, context)
 
