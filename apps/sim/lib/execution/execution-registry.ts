@@ -65,22 +65,28 @@ export class ExecutionRegistry {
   /**
    * Get the Redis key for storing wait info
    */
-  private getWaitInfoKey(executionId: string): string {
-    return `execution:wait:${executionId}`
+  private getWaitInfoKey(executionId: string, blockId?: string): string {
+    return blockId 
+      ? `execution:wait:${executionId}:${blockId}`
+      : `execution:wait:${executionId}`
   }
 
   /**
    * Get the Redis list key for resume signaling (using BLPOP for true blocking)
    */
-  private getResumeDataKey(executionId: string): string {
-    return `execution:resume:${executionId}`
+  private getResumeDataKey(executionId: string, blockId?: string): string {
+    return blockId
+      ? `execution:resume:${executionId}:${blockId}`
+      : `execution:resume:${executionId}`
   }
 
   /**
    * Get the Redis channel name for pub/sub notifications
    */
-  private getChannelName(executionId: string): string {
-    return `execution:channel:${executionId}`
+  private getChannelName(executionId: string, blockId?: string): string {
+    return blockId
+      ? `execution:channel:${executionId}:${blockId}`
+      : `execution:channel:${executionId}`
   }
 
   /**
@@ -92,7 +98,7 @@ export class ExecutionRegistry {
    * @returns Resume data when execution is woken up, or null if timeout
    */
   async waitForResume(waitInfo: WaitInfo): Promise<any> {
-    const { executionId, workflowId } = waitInfo
+    const { executionId, workflowId, blockId } = waitInfo
 
     logger.info('Registering execution for wait', {
       executionId,
@@ -102,6 +108,7 @@ export class ExecutionRegistry {
     })
 
     const redis = await initRedis()
+    logger.debug('Redis initialization result', { hasRedis: !!redis, executionId, blockId })
 
     if (!redis) {
       logger.warn('Redis not available, using in-memory fallback for wait', { executionId })
@@ -120,19 +127,29 @@ export class ExecutionRegistry {
         // Don't store full context in Redis, just minimal info
       })
 
+      const waitKey = this.getWaitInfoKey(executionId, blockId)
+      logger.debug('Setting wait info in Redis', { 
+        key: waitKey, 
+        executionId, 
+        blockId,
+        dataLength: waitInfoJson.length 
+      })
+      
       await redis.setex(
-        this.getWaitInfoKey(executionId),
+        waitKey,
         WAIT_TIMEOUT_SECONDS,
         waitInfoJson
       )
 
       logger.info('Waiting execution registered in Redis, now blocking', {
         executionId,
+        blockId,
         timeout: WAIT_TIMEOUT_SECONDS,
+        key: waitKey,
       })
 
       // Use Redis BLPOP for true blocking - thread sleeps until signaled or timeout
-      const resumeKey = this.getResumeDataKey(executionId)
+      const resumeKey = this.getResumeDataKey(executionId, blockId)
 
       try {
         // BLPOP blocks until an item is available or timeout
@@ -142,7 +159,7 @@ export class ExecutionRegistry {
         if (!result) {
           // Timeout reached
           logger.warn('Wait timeout reached', { executionId })
-          await redis.del(this.getWaitInfoKey(executionId))
+          await redis.del(this.getWaitInfoKey(executionId, blockId))
           return null
         }
 
@@ -158,14 +175,14 @@ export class ExecutionRegistry {
         }
 
         // Clean up wait info
-        await redis.del(this.getWaitInfoKey(executionId))
+        await redis.del(this.getWaitInfoKey(executionId, blockId))
 
         logger.info('Execution resumed', { executionId, hasResult: !!resumeData })
         return resumeData
 
       } catch (error) {
         logger.error('Error during BLPOP wait', { error, executionId })
-        await redis.del(this.getWaitInfoKey(executionId))
+        await redis.del(this.getWaitInfoKey(executionId, blockId))
         return null
       }
 
@@ -181,29 +198,30 @@ export class ExecutionRegistry {
    * Only works within a single process - not suitable for multi-task deployments.
    */
   private async waitForResumeInMemory(waitInfo: WaitInfo): Promise<any> {
-    const { executionId } = waitInfo
+    const { executionId, blockId } = waitInfo
+    const key = blockId ? `${executionId}:${blockId}` : executionId
 
     return new Promise<any>((resolve) => {
       const timeout = setTimeout(() => {
-        this.inMemoryWaits.delete(executionId)
-        logger.warn('Wait timeout reached (in-memory)', { executionId })
+        this.inMemoryWaits.delete(key)
+        logger.warn('Wait timeout reached (in-memory)', { executionId, blockId })
         resolve(null)
       }, WAIT_TIMEOUT_SECONDS * 1000)
 
-      const entry = this.inMemoryWaits.get(executionId) || {
+      const entry = this.inMemoryWaits.get(key) || {
         waitInfo,
         resolvers: [],
       }
 
       entry.resolvers.push((resumeData: any) => {
         clearTimeout(timeout)
-        this.inMemoryWaits.delete(executionId)
+        this.inMemoryWaits.delete(key)
         resolve(resumeData)
       })
 
-      this.inMemoryWaits.set(executionId, entry)
+      this.inMemoryWaits.set(key, entry)
 
-      logger.info('Execution waiting in memory', { executionId })
+      logger.info('Execution waiting in memory', { executionId, blockId, key })
     })
   }
 
@@ -215,27 +233,27 @@ export class ExecutionRegistry {
    * @param resumeData Data to pass to the resumed execution
    * @returns true if the execution was found and resumed, false otherwise
    */
-  async resumeExecution(executionId: string, resumeData: any = {}): Promise<boolean> {
-    logger.info('Attempting to resume execution', { executionId })
+  async resumeExecution(executionId: string, resumeData: any = {}, blockId?: string): Promise<boolean> {
+    logger.info('Attempting to resume execution', { executionId, blockId })
 
     const redis = await initRedis()
 
     if (!redis) {
       logger.warn('Redis not available, using in-memory fallback for resume', { executionId })
-      return this.resumeExecutionInMemory(executionId, resumeData)
+      return this.resumeExecutionInMemory(executionId, resumeData, blockId)
     }
 
     try {
       // Check if wait info exists
-      const waitInfoJson = await redis.get(this.getWaitInfoKey(executionId))
+      const waitInfoJson = await redis.get(this.getWaitInfoKey(executionId, blockId))
 
       if (!waitInfoJson) {
-        logger.warn('No waiting execution found for resume', { executionId })
+        logger.warn('No waiting execution found for resume', { executionId, blockId })
         return false
       }
 
       // Push resume data to Redis list (wakes up BLPOP immediately)
-      const resumeKey = this.getResumeDataKey(executionId)
+      const resumeKey = this.getResumeDataKey(executionId, blockId)
       await redis.rpush(resumeKey, JSON.stringify(resumeData))
 
       // Set expiry on the list in case the waiting thread died
@@ -243,6 +261,7 @@ export class ExecutionRegistry {
 
       logger.info('Pushed resume signal to list', {
         executionId,
+        blockId,
         resumeKey,
       })
 
@@ -258,11 +277,12 @@ export class ExecutionRegistry {
   /**
    * In-memory fallback for resuming executions
    */
-  private async resumeExecutionInMemory(executionId: string, resumeData: any): Promise<boolean> {
-    const entry = this.inMemoryWaits.get(executionId)
+  private async resumeExecutionInMemory(executionId: string, resumeData: any, blockId?: string): Promise<boolean> {
+    const key = blockId ? `${executionId}:${blockId}` : executionId
+    const entry = this.inMemoryWaits.get(key)
 
     if (!entry) {
-      logger.warn('No waiting execution found in memory for resume', { executionId })
+      logger.warn('No waiting execution found in memory for resume', { executionId, blockId })
       return false
     }
 
@@ -271,23 +291,24 @@ export class ExecutionRegistry {
       resolver(resumeData)
     }
 
-    logger.info('Resumed execution in memory', { executionId, resolverCount: entry.resolvers.length })
+    logger.info('Resumed execution in memory', { executionId, blockId, resolverCount: entry.resolvers.length })
     return true
   }
 
   /**
    * Get wait info for an execution (if it exists and is waiting)
    */
-  async getWaitInfo(executionId: string): Promise<any | null> {
+  async getWaitInfo(executionId: string, blockId?: string): Promise<any | null> {
     const redis = await initRedis()
 
     if (!redis) {
-      const entry = this.inMemoryWaits.get(executionId)
+      const key = blockId ? `${executionId}:${blockId}` : executionId
+      const entry = this.inMemoryWaits.get(key)
       return entry ? entry.waitInfo : null
     }
 
     try {
-      const waitInfoJson = await redis.get(this.getWaitInfoKey(executionId))
+      const waitInfoJson = await redis.get(this.getWaitInfoKey(executionId, blockId))
       return waitInfoJson ? JSON.parse(waitInfoJson) : null
     } catch (error) {
       logger.error('Error getting wait info', { error, executionId })

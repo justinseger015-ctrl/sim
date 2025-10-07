@@ -163,7 +163,7 @@ export class WaitBlockHandler implements BlockHandler {
       const workflowId = context.workflowId
       const baseUrl = getBaseUrl()
       const resumeUrl = executionId && workflowId 
-        ? `${baseUrl}/api/webhooks/resume/${workflowId}/${executionId}`
+        ? `${baseUrl}/api/webhooks/resume/${workflowId}/${executionId}/${block.id}`
         : undefined
 
       logger.info('Wait block resumeUrl generated', {
@@ -433,16 +433,27 @@ export class WaitBlockHandler implements BlockHandler {
         // DO NOT set pause flags here - we're handling the wait ourselves via Redis BLPOP
         // If we set shouldPauseAfterBlock, the executor will return early and break parent/child waiting
         
-        // Register and wait for resume
-        const resumeData = await registry.waitForResume({
-          workflowId,
-          executionId,
-          blockId: block.id,
-          pausedAt,
-          resumeUrl,
-          triggerType: 'webhook',
-          context,
-        })
+        let resumeData: any
+        try {
+          // Register and wait for resume
+          resumeData = await registry.waitForResume({
+            workflowId,
+            executionId,
+            blockId: block.id,
+            pausedAt,
+            resumeUrl,
+            triggerType: 'webhook',
+            context,
+          })
+        } catch (error) {
+          logger.error('Error in waitForResume', { 
+            error: error instanceof Error ? error.message : 'Unknown error',
+            stack: error instanceof Error ? error.stack : undefined,
+            executionId,
+            blockId: block.id 
+          })
+          throw error
+        }
 
         const resumedAt = new Date().toISOString()
 
