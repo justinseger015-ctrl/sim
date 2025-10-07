@@ -15,6 +15,11 @@ export interface SavePausedExecutionParams {
   blockId: string
   context: ExecutionContext
   pausedAt: Date
+  resumeType?: 'human' | 'api'  // Type of resume mechanism
+  apiInputFormat?: any  // Input schema for API resume type
+  apiResponseMode?: string  // Response mode for API resume (builder/json)
+  apiBuilderResponse?: any  // Builder response structure
+  apiEditorResponse?: any  // JSON editor response template
 }
 
 export interface PausedExecutionResult {
@@ -42,7 +47,18 @@ export class PausedExecutionService {
    * Save a paused execution to the database and generate approval token
    */
   async savePausedExecution(params: SavePausedExecutionParams, baseUrl: string): Promise<PausedExecutionResult> {
-    const { workflowId, executionId, blockId, context, pausedAt } = params
+    const { 
+      workflowId, 
+      executionId, 
+      blockId, 
+      context, 
+      pausedAt, 
+      resumeType = 'human', 
+      apiInputFormat,
+      apiResponseMode,
+      apiBuilderResponse,
+      apiEditorResponse,
+    } = params
     let { userId } = params
 
     // If userId not provided, fetch from workflow
@@ -133,9 +149,15 @@ export class PausedExecutionService {
         workflowInput: null,
         metadata: {
           blockId,
-          resumeTriggerType: 'human',
+          resumeTriggerType: resumeType,
           triggerType, // Save the original trigger type
           pausedAt: pausedAt.toISOString(),
+          ...(resumeType === 'api' && {
+            apiInputFormat,
+            apiResponseMode,
+            apiBuilderResponse,
+            apiEditorResponse,
+          }),
         },
         approvalToken,
         approvalUsed: false,

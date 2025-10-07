@@ -10,14 +10,17 @@ export const UserApprovalBlock: BlockConfig = {
   name: 'Human in the Loop',
   description: 'Pause workflow and wait for webhook trigger or time delay',
   longDescription:
-    'Pauses workflow execution for a specified time interval or until a webhook is received. Time-based waits execute a simple sleep. Webhook waits generate a unique resume URL and optionally send notifications to external systems. Perfect for human-in-the-loop workflows requiring manual review or external system coordination.',
+    'Pauses workflow execution for manual approval, API approval, time delay, or webhook trigger. Human mode generates one-time approval links. API mode creates authenticated endpoints for programmatic approval. Time-based waits execute a simple sleep. Webhook waits generate resume URLs with optional notifications. Perfect for human-in-the-loop workflows requiring manual review or external system coordination.',
   bestPractices: `
   - Use "Time Interval" for simple delays (max 5 minutes)
-  - Use "Webhook" to pause until an external system or user triggers resumption
+  - Use "Human" for one-time approval links (works in both deployed and non-deployed workflows)
+  - Use "API" for programmatic approval via authenticated API endpoints (requires workflow to be deployed)
+  - Use "Webhook" to pause until an external system triggers resumption
+  - For API mode: Define your input schema and the "approved" field (boolean) will be automatically validated
   - Always set a webhook secret for security when using webhook mode
   - Optionally configure a notification webhook to alert external systems when the workflow pauses
   - Use mock response for client-side testing without triggering real webhooks
-  - Access the resumeUrl output to share the webhook URL with external systems
+  - Access the resumeUrl/approveUrl outputs to share URLs with external systems
   `,
   category: 'blocks',
   bgColor: '#10B981',
@@ -33,8 +36,60 @@ export const UserApprovalBlock: BlockConfig = {
         { label: 'Time Interval', id: 'time' },
         { label: 'Webhook', id: 'webhook' },
         { label: 'Human', id: 'human' },
+        { label: 'API', id: 'api' },
       ],
       value: () => 'human',
+    },
+    // API input format configuration
+    {
+      id: 'apiInputFormat',
+      title: 'API Input Format',
+      type: 'input-format',
+      layout: 'full',
+      description: 'Define the JSON schema for the API resume payload. You can add any custom fields here.',
+      condition: { field: 'resumeTriggerType', value: 'api' },
+    },
+    // API response configuration
+    {
+      id: 'apiResponseMode',
+      title: 'Response Data Mode',
+      type: 'dropdown',
+      layout: 'full',
+      options: [
+        { label: 'Builder', id: 'structured' },
+        { label: 'Editor', id: 'json' },
+      ],
+      value: () => 'structured',
+      description: 'Choose how to define the data returned when this block executes',
+      condition: { field: 'resumeTriggerType', value: 'api' },
+    },
+    {
+      id: 'apiBuilderResponse',
+      title: 'Response Structure',
+      type: 'response-format',
+      layout: 'full',
+      condition: {
+        field: 'resumeTriggerType',
+        value: 'api',
+        and: { field: 'apiResponseMode', value: 'structured' },
+      },
+      description:
+        'Define what data this block returns when executed. Use <variable.name> to reference workflow variables or API inputs.',
+    },
+    {
+      id: 'apiEditorResponse',
+      title: 'Response Data',
+      type: 'code',
+      layout: 'full',
+      placeholder: '{\n  "approved": "<api.approved>",\n  "customField": "<api.customField>"\n}',
+      language: 'json',
+      condition: {
+        field: 'resumeTriggerType',
+        value: 'api',
+        and: { field: 'apiResponseMode', value: 'json' },
+      },
+      description:
+        'Define what data this block returns when executed. Use <api.fieldName> to reference API input fields, or <variable.name> for other workflow variables.',
     },
     // Time interval configuration
     {
@@ -175,6 +230,22 @@ export const UserApprovalBlock: BlockConfig = {
       type: 'json',
       description: 'Mock webhook data for client-side testing',
     },
+    apiInputFormat: {
+      type: 'json',
+      description: 'Input schema for API resume type',
+    },
+    apiResponseMode: {
+      type: 'string',
+      description: 'Response data mode for API resume (structured or json)',
+    },
+    apiBuilderResponse: {
+      type: 'json',
+      description: 'Structured response data for API resume (builder mode)',
+    },
+    apiEditorResponse: {
+      type: 'json',
+      description: 'JSON response data for API resume (editor mode)',
+    },
   },
   outputs: {
     webhook: {
@@ -191,7 +262,7 @@ export const UserApprovalBlock: BlockConfig = {
     },
     resumeUrl: {
       type: 'string',
-      description: 'The unique URL that can be used to resume the workflow',
+      description: 'The unique URL that can be used to resume the workflow (available in Webhook and API modes)',
     },
     approveUrl: {
       type: 'string',

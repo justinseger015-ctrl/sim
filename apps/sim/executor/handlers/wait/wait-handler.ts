@@ -2,6 +2,7 @@ import { createLogger } from '@/lib/logs/console/logger'
 import type { BlockHandler, ExecutionContext } from '@/executor/types'
 import type { SerializedBlock } from '@/serializer/types'
 import { getBaseUrl } from '@/lib/urls/utils'
+import { ResponseBlockHandler } from '@/executor/handlers/response/response-handler'
 import { executeTool } from '@/tools'
 import { retryWithExponentialBackoff } from '@/lib/knowledge/documents/utils'
 
@@ -65,8 +66,66 @@ const sleep = async (ms: number, checkCancelled?: () => boolean): Promise<boolea
  * - For webhook triggers: Pauses workflow and waits for external webhook call
  */
 export class WaitBlockHandler implements BlockHandler {
+  private responseHandler = new ResponseBlockHandler()
+
   canHandle(block: SerializedBlock): boolean {
     return block.metadata?.id === 'wait' || block.metadata?.id === 'user_approval'
+  }
+
+  /**
+   * Parse API response data using the same logic as Response block
+   * Handles self-references to resumeUrl by manually replacing them
+   */
+  private parseApiResponseData(inputs: Record<string, any>, resumeUrl: string): any {
+    const responseMode = inputs.apiResponseMode || 'json'
+    
+    // Helper to replace self-references to resumeUrl
+    const resolveSelfReferences = (value: any): any => {
+      if (typeof value === 'string') {
+        // Replace any <blockName.resumeUrl> pattern with the actual resumeUrl
+        return value.replace(/<[^>]+\.resumeUrl>/g, resumeUrl)
+      }
+      if (Array.isArray(value)) {
+        return value.map(resolveSelfReferences)
+      }
+      if (value && typeof value === 'object') {
+        const resolved: any = {}
+        for (const [key, val] of Object.entries(value)) {
+          resolved[key] = resolveSelfReferences(val)
+        }
+        return resolved
+      }
+      return value
+    }
+    
+    if (responseMode === 'json' && inputs.apiEditorResponse) {
+      // Handle JSON mode
+      let data = inputs.apiEditorResponse
+      if (typeof data === 'string') {
+        try {
+          data = JSON.parse(data)
+        } catch (error) {
+          // Not valid JSON, keep as string
+        }
+      }
+      return resolveSelfReferences(data)
+    }
+    
+    if (responseMode === 'structured' && inputs.apiBuilderResponse) {
+      // Handle structured mode - convert array format to object
+      if (Array.isArray(inputs.apiBuilderResponse)) {
+        const result: any = {}
+        for (const field of inputs.apiBuilderResponse) {
+          if (field.name) {
+            result[field.name] = resolveSelfReferences(field.value)
+          }
+        }
+        return result
+      }
+      return resolveSelfReferences(inputs.apiBuilderResponse)
+    }
+    
+    return {}
   }
 
   async execute(
@@ -108,12 +167,8 @@ export class WaitBlockHandler implements BlockHandler {
       // For user_approval blocks, return the approval status
       if (block.metadata?.id === 'user_approval') {
         const output = {
+          approveUrl: resumeInput?.approveUrl || resumeInput?.approvalToken ? `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/approve/${resumeInput.approvalToken}` : '',
           approved: resumeInput?.approved || false,
-          approveUrl: resumeInput?.approveUrl || '',
-          status: 'resumed',
-          webhook: {},
-          waitDuration: 0,
-          resumeUrl: resumeInput?.approveUrl || '',
         }
         
         logger.info('Returning human approval output', {
@@ -126,6 +181,42 @@ export class WaitBlockHandler implements BlockHandler {
       }
       
       // For regular wait blocks with human mode (shouldn't happen but handle gracefully)
+      return {
+        status: 'resumed',
+      }
+    }
+
+    // Check if we're resuming from an API approval
+    if (isResuming && resumeTriggerType === 'api') {
+      logger.info(`Wait block resumed via API approval`, {
+        blockId: block.id,
+        blockName: block.metadata?.name,
+        hasResumeInput: !!resumeInput,
+        resumeInputKeys: resumeInput ? Object.keys(resumeInput) : [],
+      })
+      
+      // For user_approval blocks, return the API input data as block outputs
+      // The API response format is handled separately in the resume endpoint
+      if (block.metadata?.id === 'user_approval') {
+        const baseUrl = getBaseUrl()
+        
+        // Return the API input payload as the block's output
+        // This makes all the API input fields available to downstream blocks
+        const output = {
+          resumeUrl: `${baseUrl}/api/workflows/${context.workflowId}/executions/resume/${context.executionId}`,
+          ...resumeInput, // All API input fields become available downstream
+        }
+        
+        logger.info('Returning API input as block output', {
+          blockId: block.id,
+          blockName: block.metadata?.name,
+          outputKeys: Object.keys(output),
+        })
+        
+        return output
+      }
+      
+      // For regular wait blocks with API mode (shouldn't happen but handle gracefully)
       return {
         status: 'resumed',
       }
@@ -699,14 +790,206 @@ export class WaitBlockHandler implements BlockHandler {
           approveUrl,
         })
 
-        // Return the approval URL - workflow will pause after this block
+        // Return only the actual block outputs (approveUrl and approved)
+        // Other internal fields should not be exposed to API consumers
         return {
           approveUrl,
           approved: false, // Not yet approved
-          status: 'pending_approval',
-          webhook: {},
-          waitDuration: 0,
-          resumeUrl: approveUrl, // Same as approveUrl for human mode
+        }
+      }
+
+      // Handle "API" resume type - programmatic approval via API
+      if (inputs.resumeTriggerType === 'api') {
+        // Check for mock response (testing mode)
+        const mockResponse = inputs.mockResponse
+        
+        if (mockResponse) {
+          logger.info('API approval block using mock response (testing mode)', {
+            executionId,
+            workflowId,
+            blockId: block.id,
+          })
+          
+          // Parse mock response if it's a string
+          let mockData = mockResponse
+          if (typeof mockResponse === 'string') {
+            try {
+              mockData = JSON.parse(mockResponse)
+            } catch (error) {
+              logger.warn('Failed to parse mock response as JSON, using as-is', { error })
+            }
+          }
+          
+          return {
+            resumeUrl: 'mock://resume-url',
+            approved: mockData?.approved || false,
+            ...mockData, // Include other fields from mock data
+          }
+        }
+
+        const baseUrl = getBaseUrl()
+        let resumeUrl = `${baseUrl}/api/workflows/${workflowId}/executions/resume/${executionId}`
+        
+        // Check if this is a deployed execution
+        // If not deployed, return the configured response without saving to DB
+        if (!context.isDeployedContext) {
+          logger.info('API resume type in non-deployed context, pausing without DB save', {
+            executionId,
+            workflowId,
+            blockId: block.id,
+          })
+          
+          // Signal to pause execution
+          ;(context as any).shouldPauseAfterBlock = true
+          ;(context as any).waitBlockInfo = {
+            blockId: block.id,
+            blockName: block.metadata?.name || 'Human in the Loop',
+            pausedAt: new Date(pausedAt).toISOString(),
+            description: 'Workflow paused for API approval (editor mode)',
+            triggerConfig: {
+              type: 'api',
+              resumeUrl,
+            },
+          }
+          
+          // For non-deployed context, return simple block outputs (not apiResponse format)
+          // This allows the block to show properly in the editor UI
+          const responseData = this.parseApiResponseData(inputs, resumeUrl)
+          
+          return {
+            resumeUrl,
+            ...responseData,
+          }
+        }
+
+        // Save execution state to database and generate API resume URL
+        
+        if (!executionId || !workflowId) {
+          throw new Error('Execution ID and Workflow ID are required for API resume block')
+        }
+        
+        // Try server-side service first (for server execution)
+        const pausedService = await getPausedExecutionService()
+        
+        if (pausedService) {
+          // Server-side execution - use service directly
+          try {
+            const result = await pausedService.savePausedExecution(
+              {
+                workflowId,
+                executionId,
+                blockId: block.id,
+                context,
+                pausedAt: new Date(pausedAt),
+                resumeType: 'api',
+                apiInputFormat: inputs.apiInputFormat,
+                apiResponseMode: inputs.apiResponseMode,
+                apiBuilderResponse: inputs.apiBuilderResponse,
+                apiEditorResponse: inputs.apiEditorResponse,
+              },
+              baseUrl
+            )
+            // For API mode, use the API resume endpoint
+            resumeUrl = `${baseUrl}/api/workflows/${workflowId}/executions/resume/${executionId}`
+
+            logger.info('Paused execution saved (server-side), API resume URL generated', {
+              executionId,
+              workflowId,
+              resumeUrl,
+            })
+          } catch (error) {
+            logger.error('Failed to save paused execution', {
+              error,
+              executionId,
+              workflowId,
+            })
+            throw new Error(`Failed to save paused execution state: ${error instanceof Error ? error.message : 'Unknown error'}`)
+          }
+        } else {
+          // Client-side execution - call API endpoint
+          logger.info('Client-side execution - calling API to save paused state', {
+            executionId,
+            workflowId,
+            blockId: block.id,
+          })
+
+          try {
+            const response = await fetch('/api/execution/pause', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                workflowId,
+                executionId,
+                blockId: block.id,
+                context,
+                pausedAt: new Date(pausedAt).toISOString(),
+                resumeType: 'api',
+                apiInputFormat: inputs.apiInputFormat,
+                apiResponseMode: inputs.apiResponseMode,
+                apiBuilderResponse: inputs.apiBuilderResponse,
+                apiEditorResponse: inputs.apiEditorResponse,
+              }),
+            })
+
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}))
+              throw new Error(errorData.details || errorData.error || 'Failed to save paused execution')
+            }
+
+            const result = await response.json()
+            // For API mode, use the API resume endpoint
+            resumeUrl = `${baseUrl}/api/workflows/${workflowId}/executions/resume/${executionId}`
+
+            logger.info('Paused execution saved (client-side API), API resume URL generated', {
+              executionId,
+              workflowId,
+              resumeUrl,
+            })
+          } catch (error) {
+            logger.error('Failed to save paused execution via API', {
+              error,
+              executionId,
+              workflowId,
+            })
+            throw new Error(`Failed to save paused execution state: ${error instanceof Error ? error.message : 'Unknown error'}`)
+          }
+        }
+
+        // Signal to the executor to pause execution after this block
+        ;(context as any).shouldPauseAfterBlock = true
+        ;(context as any).waitBlockInfo = {
+          blockId: block.id,
+          blockName: block.metadata?.name || 'Human in the Loop',
+          pausedAt: new Date(pausedAt).toISOString(),
+          description: 'Workflow paused for API approval',
+          triggerConfig: {
+            type: 'api',
+            resumeUrl,
+          },
+        }
+
+        logger.info('Workflow will pause after API approval block', {
+          executionId,
+          workflowId,
+          blockId: block.id,
+          resumeUrl,
+        })
+
+        // Return the configured response structure using Response block logic
+        const responseData = this.parseApiResponseData(inputs, resumeUrl)
+        
+        // Return as 'apiResponse' so the execute route knows to handle it like Response block
+        return {
+          apiResponse: {
+            data: {
+              resumeUrl,
+              ...responseData,
+            },
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
         }
       }
 

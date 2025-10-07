@@ -39,14 +39,16 @@ const EnvVarsSchema = z.record(z.string())
 
 const runningExecutions = new Set<string>()
 
+// Utility function to filter out sensitive data from API response
 export function createFilteredResult(result: any) {
   return {
     ...result,
     logs: undefined,
     metadata: result.metadata
       ? {
-          ...result.metadata,
-          workflowConnections: undefined,
+          duration: result.metadata.duration,
+          startTime: result.metadata.startTime,
+          isPaused: result.metadata.isPaused,
         }
       : undefined,
   }
@@ -563,6 +565,18 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         return createHttpResponseFromBlock(result)
       }
 
+      // Check if the workflow execution paused at API mode HITL block
+      if (result.output?.apiResponse) {
+        const { data, status, headers } = result.output.apiResponse
+        return NextResponse.json(data, {
+          status: status || 200,
+          headers: new Headers({
+            'Content-Type': 'application/json',
+            ...headers,
+          }),
+        })
+      }
+
       // Filter out logs and workflowConnections from the API response
       const filteredResult = createFilteredResult(result)
       return createSuccessResponse(filteredResult)
@@ -819,6 +833,18 @@ export async function POST(
       const hasResponseBlock = workflowHasResponseBlock(result)
       if (hasResponseBlock) {
         return createHttpResponseFromBlock(result)
+      }
+
+      // Check if the workflow execution paused at API mode HITL block
+      if (result.output?.apiResponse) {
+        const { data, status, headers } = result.output.apiResponse
+        return NextResponse.json(data, {
+          status: status || 200,
+          headers: new Headers({
+            'Content-Type': 'application/json',
+            ...headers,
+          }),
+        })
       }
 
       // Filter out logs and workflowConnections from the API response

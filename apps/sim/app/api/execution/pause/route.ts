@@ -16,7 +16,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   
   try {
     const body = await request.json()
-    const { workflowId, executionId, blockId, context, pausedAt } = body
+    const { 
+      workflowId, 
+      executionId, 
+      blockId, 
+      context, 
+      pausedAt, 
+      resumeType, 
+      apiInputFormat,
+      apiResponseMode,
+      apiBuilderResponse,
+      apiEditorResponse,
+    } = body
 
     if (!workflowId || !executionId || !blockId) {
       return NextResponse.json(
@@ -41,6 +52,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       executionId,
       blockId,
       userId,
+      resumeType: resumeType || 'human',
     })
 
     const baseUrl = getBaseUrl()
@@ -52,6 +64,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         blockId,
         context,
         pausedAt: pausedAt ? new Date(pausedAt) : new Date(),
+        resumeType,
+        apiInputFormat,
+        apiResponseMode,
+        apiBuilderResponse,
+        apiEditorResponse,
       },
       baseUrl
     )

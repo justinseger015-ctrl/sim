@@ -230,16 +230,12 @@ export async function POST(
         const executionTime = approvedAt.getTime() - pausedAt.getTime()
         
         const approvalOutput = {
-          approved,
           approveUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/approve/${token}`,
-          status: approved ? 'approved' : 'rejected',
-          webhook: {},
-          waitDuration: executionTime,
-          resumeUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/approve/${token}`,
+          approved,
         }
         
         context.blockStates.set(blockId, {
-          output: approvalOutput as any, // Type cast since status can be string for HITL blocks
+          output: approvalOutput,
           executed: true,
           executionTime,
         })
@@ -274,21 +270,7 @@ export async function POST(
         })
       }
 
-      // Update the Human in the Loop block's output with the approval decision (legacy)
-      if (blockId && context.blockStates) {
-        const blockState = context.blockStates.get(blockId)
-        if (blockState) {
-          blockState.output = {
-            ...blockState.output,
-            approved,
-            webhook: {
-              action: action,
-              timestamp: new Date().toISOString(),
-            },
-          }
-          blockState.executed = true
-        }
-      }
+      // The blockState has already been set above with the clean output
 
       // If rejected, don't resume execution - just mark and return
       if (!approved) {

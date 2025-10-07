@@ -13,6 +13,32 @@ import { getUserEntityPermissions } from '@/lib/permissions/utils'
 const logger = createLogger('ResumeExecutionAPI')
 
 /**
+ * Helper function to replace <api.fieldName> references with actual values
+ */
+function replaceApiReferences(obj: any, apiInput: Record<string, any>): any {
+  if (typeof obj === 'string') {
+    // Replace <api.fieldName> patterns
+    return obj.replace(/<api\.(\w+)>/g, (match, fieldName) => {
+      return apiInput[fieldName] !== undefined ? apiInput[fieldName] : match
+    })
+  }
+  
+  if (Array.isArray(obj)) {
+    return obj.map(item => replaceApiReferences(item, apiInput))
+  }
+  
+  if (obj && typeof obj === 'object') {
+    const result: any = {}
+    for (const [key, value] of Object.entries(obj)) {
+      result[key] = replaceApiReferences(value, apiInput)
+    }
+    return result
+  }
+  
+  return obj
+}
+
+/**
  * POST /api/workflows/[id]/executions/resume/[executionId]
  * Resumes a paused workflow execution
  */
@@ -21,14 +47,43 @@ export async function POST(
   { params }: { params: Promise<{ id: string; executionId: string }> }
 ) {
   try {
-    const session = await getSession()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { id: workflowId, executionId } = await params
+    
+    // Check for API key authentication (for API resume type)
+    const apiKeyHeader = request.headers.get('x-api-key')
+    let authenticatedUserId: string | null = null
+    let isApiAuth = false
+
+    if (apiKeyHeader) {
+      // API key authentication
+      const { validateWorkflowAccess } = await import('@/app/api/workflows/middleware')
+      const validation = await validateWorkflowAccess(request, workflowId, true)
+      
+      if (validation.error) {
+        return NextResponse.json(
+          { error: validation.error.message },
+          { status: validation.error.status }
+        )
+      }
+      
+      authenticatedUserId = validation.workflow!.userId
+      isApiAuth = true
+      
+      logger.info(`API key authenticated for workflow ${workflowId}`, {
+        userId: authenticatedUserId,
+      })
+    } else {
+      // Session authentication (for manual resume from UI)
+      const session = await getSession()
+      if (!session?.user?.id) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+      authenticatedUserId = session.user.id
     }
 
-    const { id: workflowId, executionId } = await params
-
-    logger.info(`Resuming execution ${executionId} for workflow ${workflowId}`)
+    logger.info(`Resuming execution ${executionId} for workflow ${workflowId}`, {
+      isApiAuth,
+    })
 
     // Check if user has permission for this workflow
     const [workflowData] = await db
@@ -42,11 +97,11 @@ export async function POST(
     }
 
     // Check permissions
-    let hasPermission = workflowData.userId === session.user.id
+    let hasPermission = workflowData.userId === authenticatedUserId
     
     if (!hasPermission && workflowData.workspaceId) {
       const userPermission = await getUserEntityPermissions(
-        session.user.id,
+        authenticatedUserId!,
         'workspace',
         workflowData.workspaceId
       )
@@ -67,6 +122,43 @@ export async function POST(
       )
     }
 
+    // For API resume type, validate the input payload
+    let resumeInput: any = {}
+    const resumeType = (resumeData.metadata as any)?.resumeTriggerType
+    
+    if (resumeType === 'api') {
+      // Parse and validate the API payload against the defined input schema
+      try {
+        const payload = await request.json()
+        
+        // Validate against the defined input schema
+        const apiInputFormat = (resumeData.metadata as any)?.apiInputFormat
+        if (apiInputFormat && Array.isArray(apiInputFormat)) {
+          // Validate required fields
+          for (const field of apiInputFormat) {
+            if (field.required && !(field.name in payload)) {
+              return NextResponse.json(
+                { error: `Missing required field: ${field.name}` },
+                { status: 400 }
+              )
+            }
+          }
+        }
+        
+        resumeInput = payload
+        
+        logger.info('API resume payload validated', {
+          executionId,
+          payloadKeys: Object.keys(payload),
+        })
+      } catch (parseError) {
+        return NextResponse.json(
+          { error: 'Invalid JSON payload' },
+          { status: 400 }
+        )
+      }
+    }
+
     // Create executor from paused state
     const { executor, context } = Executor.createFromPausedState(
       resumeData.workflowState,
@@ -78,6 +170,7 @@ export async function POST(
         executionId: executionId,
         workspaceId: workflowData.workspaceId,
         isDeployedContext: resumeData.metadata?.isDeployedContext || false,
+        ...(resumeType === 'api' && { resumeInput }), // Pass the API payload as resumeInput
       }
     )
 
@@ -125,7 +218,7 @@ export async function POST(
           await pauseResumeService.pauseExecution({
             workflowId,
             executionId,
-            userId: session.user.id,
+            userId: authenticatedUserId!,
             executionContext,
             workflowState,
             environmentVariables,
@@ -141,6 +234,58 @@ export async function POST(
       }
     }
 
+    // For API resume type, return the custom configured response to the API caller
+    if (resumeType === 'api' && isApiAuth) {
+      const metadata = resumeData.metadata as any
+      const apiResponseMode = metadata?.apiResponseMode || 'json'
+      
+      let responseData: any = {
+        success: true,
+        message: 'Workflow resumed successfully',
+      }
+      
+      // Build custom response based on configuration
+      // The response can reference the API inputs using <api.fieldName>
+      if (apiResponseMode === 'json' && metadata?.apiEditorResponse) {
+        // Editor mode: Use the JSON response template
+        try {
+          let editorResponse = metadata.apiEditorResponse
+          
+          // If it's a string, parse it
+          if (typeof editorResponse === 'string') {
+            editorResponse = JSON.parse(editorResponse)
+          }
+          
+          // Replace <api.fieldName> references with actual values from resumeInput
+          const resolvedResponse = replaceApiReferences(editorResponse, resumeInput)
+          responseData = resolvedResponse
+        } catch (parseError) {
+          logger.warn('Failed to parse/resolve API editor response, using default', { parseError })
+          responseData = { ...responseData, ...resumeInput }
+        }
+      } else if (apiResponseMode === 'structured' && metadata?.apiBuilderResponse) {
+        // Builder mode: Use the structured response
+        // Resolve any API references in the builder data
+        const resolvedResponse = replaceApiReferences(metadata.apiBuilderResponse, resumeInput)
+        responseData = resolvedResponse
+      } else {
+        // Default: return the API input as confirmation
+        responseData = {
+          ...responseData,
+          data: resumeInput,
+        }
+      }
+      
+      logger.info('Returning custom API response to caller', {
+        executionId,
+        responseMode: apiResponseMode,
+        responseKeys: Object.keys(responseData),
+      })
+      
+      return NextResponse.json(responseData)
+    }
+    
+    // For non-API resume (webhook, manual), return standard response
     return NextResponse.json({
       success: executionResult.success,
       output: executionResult.output,
