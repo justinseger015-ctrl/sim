@@ -72,6 +72,46 @@ export function getBlockOutputs(
     }
   }
 
+  // Special handling for user_approval block (Human in the Loop)
+  // Add dynamic outputs from input formats
+  if (blockType === 'user_approval') {
+    const resumeTriggerType = subBlocks?.resumeTriggerType?.value || 'human'
+    
+    if (resumeTriggerType === 'human') {
+      const humanOperation = subBlocks?.humanOperation?.value || 'approval'
+      
+      if (humanOperation === 'custom') {
+        // Custom mode: add fields from humanInputFormat
+        const humanInputFormat = subBlocks?.humanInputFormat?.value
+        if (Array.isArray(humanInputFormat)) {
+          humanInputFormat.forEach((field: { name?: string; type?: string }) => {
+            if (field.name && field.name.trim() !== '') {
+              outputs[field.name] = {
+                type: (field.type || 'any') as any,
+                description: `Custom form field`,
+              }
+            }
+          })
+        }
+      }
+    } else if (resumeTriggerType === 'api') {
+      // API mode: add fields from apiInputFormat
+      const apiInputFormat = subBlocks?.apiInputFormat?.value
+      if (Array.isArray(apiInputFormat)) {
+        apiInputFormat.forEach((field: { name?: string; type?: string }) => {
+          if (field.name && field.name.trim() !== '') {
+            outputs[field.name] = {
+              type: (field.type || 'any') as any,
+              description: `API input field`,
+            }
+          }
+        })
+      }
+    }
+    
+    return outputs
+  }
+
   // For blocks with inputFormat, add dynamic outputs
   if (hasInputFormat(blockConfig) && subBlocks?.inputFormat?.value) {
     let inputFormatValue = subBlocks.inputFormat.value

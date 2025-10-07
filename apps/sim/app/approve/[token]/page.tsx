@@ -4,6 +4,10 @@ import { useParams, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 import { CheckCircle2, XCircle, Loader2, AlertCircle } from 'lucide-react'
 
 interface ApprovalDetails {
@@ -12,6 +16,13 @@ interface ApprovalDetails {
   pausedAt: string
   metadata: any
   workflowName: string
+  humanOperation?: 'approval' | 'custom'
+  humanInputFormat?: Array<{
+    id: string
+    name: string
+    type: 'string' | 'number' | 'boolean' | 'object' | 'array'
+    required?: boolean
+  }>
 }
 
 export default function ApprovalPage() {
@@ -25,6 +36,7 @@ export default function ApprovalPage() {
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<'approve' | 'reject' | null>(null)
   const [alreadyUsed, setAlreadyUsed] = useState(false)
+  const [formData, setFormData] = useState<Record<string, any>>({})
 
   // Fetch approval details on mount
   useEffect(() => {
@@ -51,7 +63,7 @@ export default function ApprovalPage() {
     fetchDetails()
   }, [token])
 
-  const handleAction = async (action: 'approve' | 'reject') => {
+  const handleAction = async (action: 'approve' | 'reject', customData?: Record<string, any>) => {
     setSubmitting(true)
     setError(null)
 
@@ -61,7 +73,10 @@ export default function ApprovalPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ 
+          action,
+          ...(customData && { formData: customData })
+        }),
       })
 
       const data = await response.json()
@@ -79,6 +94,22 @@ export default function ApprovalPage() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const handleCustomSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    // Validate required fields
+    if (details?.humanInputFormat) {
+      for (const field of details.humanInputFormat) {
+        if (field.required && !formData[field.name]) {
+          setError(`Field "${field.name}" is required`)
+          return
+        }
+      }
+    }
+    
+    handleAction('approve', formData)
   }
 
   if (loading) {
@@ -227,43 +258,123 @@ export default function ApprovalPage() {
             </div>
           )}
 
-          <div className="flex gap-3">
-            <Button
-              onClick={() => handleAction('approve')}
-              disabled={submitting}
-              className="flex-1 bg-green-600 hover:bg-green-700"
-            >
-              {submitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="mr-2 h-4 w-4" />
-                  Approve
-                </>
-              )}
-            </Button>
-            <Button
-              onClick={() => handleAction('reject')}
-              disabled={submitting}
-              variant="destructive"
-              className="flex-1"
-            >
-              {submitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <XCircle className="mr-2 h-4 w-4" />
-                  Reject
-                </>
-              )}
-            </Button>
-          </div>
+          {details?.humanOperation === 'custom' && details?.humanInputFormat ? (
+            // Custom form mode
+            <form onSubmit={handleCustomSubmit} className="space-y-4">
+              {details.humanInputFormat.map((field) => (
+                <div key={field.id} className="space-y-2">
+                  <Label htmlFor={field.name}>
+                    {field.name}
+                    {field.required && <span className="text-red-500 ml-1">*</span>}
+                  </Label>
+                  {field.type === 'boolean' ? (
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id={field.name}
+                        checked={formData[field.name] || false}
+                        onCheckedChange={(checked) =>
+                          setFormData({ ...formData, [field.name]: checked })
+                        }
+                      />
+                      <label htmlFor={field.name} className="text-sm text-muted-foreground cursor-pointer">
+                        Enable
+                      </label>
+                    </div>
+                  ) : field.type === 'number' ? (
+                    <Input
+                      id={field.name}
+                      type="number"
+                      value={formData[field.name] || ''}
+                      onChange={(e) =>
+                        setFormData({ ...formData, [field.name]: Number(e.target.value) })
+                      }
+                      required={field.required}
+                    />
+                  ) : field.type === 'object' || field.type === 'array' ? (
+                    <Textarea
+                      id={field.name}
+                      placeholder={field.type === 'array' ? '[]' : '{}'}
+                      value={formData[field.name] || ''}
+                      onChange={(e) => {
+                        try {
+                          const parsed = JSON.parse(e.target.value)
+                          setFormData({ ...formData, [field.name]: parsed })
+                        } catch {
+                          setFormData({ ...formData, [field.name]: e.target.value })
+                        }
+                      }}
+                      required={field.required}
+                      className="font-mono text-sm"
+                      rows={4}
+                    />
+                  ) : (
+                    <Input
+                      id={field.name}
+                      type="text"
+                      value={formData[field.name] || ''}
+                      onChange={(e) =>
+                        setFormData({ ...formData, [field.name]: e.target.value })
+                      }
+                      required={field.required}
+                    />
+                  )}
+                </div>
+              ))}
+              <Button
+                type="submit"
+                disabled={submitting}
+                className="w-full bg-green-600 hover:bg-green-700"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Submitting...
+                  </>
+                ) : (
+                  'Submit'
+                )}
+              </Button>
+            </form>
+          ) : (
+            // Approval mode (default)
+            <div className="flex gap-3">
+              <Button
+                onClick={() => handleAction('approve')}
+                disabled={submitting}
+                className="flex-1 bg-green-600 hover:bg-green-700"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                    Approve
+                  </>
+                )}
+              </Button>
+              <Button
+                onClick={() => handleAction('reject')}
+                disabled={submitting}
+                variant="destructive"
+                className="flex-1"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <XCircle className="mr-2 h-4 w-4" />
+                    Reject
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
 
           <p className="text-xs text-muted-foreground text-center mt-4">
             This is a one-time use link. Once you make a decision, this link will no longer be

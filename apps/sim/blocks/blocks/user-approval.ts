@@ -40,6 +40,33 @@ export const UserApprovalBlock: BlockConfig = {
       ],
       value: () => 'human',
     },
+    // Human mode operation type
+    {
+      id: 'humanOperation',
+      title: 'Operation',
+      type: 'dropdown',
+      layout: 'full',
+      options: [
+        { label: 'Approval', id: 'approval' },
+        { label: 'Custom', id: 'custom' },
+      ],
+      value: () => 'approval',
+      description: 'Choose the type of human interaction',
+      condition: { field: 'resumeTriggerType', value: 'human' },
+    },
+    // Custom input format for Human mode
+    {
+      id: 'humanInputFormat',
+      title: 'Form Fields',
+      type: 'input-format',
+      layout: 'full',
+      description: 'Define the form fields that the user will fill out',
+      condition: {
+        field: 'resumeTriggerType',
+        value: 'human',
+        and: { field: 'humanOperation', value: 'custom' },
+      },
+    },
     // API input format configuration
     {
       id: 'apiInputFormat',
@@ -230,6 +257,14 @@ export const UserApprovalBlock: BlockConfig = {
       type: 'json',
       description: 'Mock webhook data for client-side testing',
     },
+    humanOperation: {
+      type: 'string',
+      description: 'Type of human operation (approval or custom)',
+    },
+    humanInputFormat: {
+      type: 'json',
+      description: 'Input schema for custom form fields in Human mode',
+    },
     apiInputFormat: {
       type: 'json',
       description: 'Input schema for API resume type',
@@ -248,30 +283,31 @@ export const UserApprovalBlock: BlockConfig = {
     },
   },
   outputs: {
-    webhook: {
-      type: 'json',
-      description: 'Payload data from the webhook that resumed the workflow. When using mock response in client testing, this contains the mock data.',
-    },
-    waitDuration: {
-      type: 'number',
-      description: 'Wait duration in milliseconds (for time-based waits)',
-    },
-    status: {
-      type: 'string',
-      description: 'Status of the wait block (waiting, resumed, completed, cancelled, timeout)',
-    },
-    resumeUrl: {
-      type: 'string',
-      description: 'The unique URL that can be used to resume the workflow (available in Webhook and API modes)',
+    // Dynamic outputs - actual outputs are determined by getBlockOutputs() in lib/workflows/block-outputs.ts
+    // based on resumeTriggerType, humanOperation, and input formats
+    // 
+    // Base outputs that may be available:
+    approved: {
+      type: 'boolean',
+      description: 'Whether approved or rejected (Human - Approval mode only)',
     },
     approveUrl: {
       type: 'string',
-      description: 'One-time approval URL for human review (only available in Human mode)',
+      description: 'One-time approval URL (Human mode)',
     },
-    approved: {
-      type: 'boolean',
-      description: 'Whether the human approved (true) or rejected (false)',
+    resumeUrl: {
+      type: 'string',
+      description: 'API/Webhook endpoint to resume workflow (API/Webhook modes)',
     },
+    waitDuration: {
+      type: 'number',
+      description: 'Time taken for approval/resume in ms',
+    },
+    webhook: {
+      type: 'json',
+      description: 'Webhook payload data (Webhook mode)',
+    },
+    // Additional dynamic outputs from humanInputFormat, apiInputFormat will be added at runtime
   },
 }
 

@@ -164,17 +164,31 @@ export class WaitBlockHandler implements BlockHandler {
         resumeInputKeys: resumeInput ? Object.keys(resumeInput) : [],
       })
       
-      // For user_approval blocks, return the approval status
+      // For user_approval blocks, return the approval status and any custom form data
       if (block.metadata?.id === 'user_approval') {
-        const output = {
-          approveUrl: resumeInput?.approveUrl || resumeInput?.approvalToken ? `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/approve/${resumeInput.approvalToken}` : '',
-          approved: resumeInput?.approved || false,
+        // Extract base fields that shouldn't be passed as custom outputs
+        const { approved, approvedAt, approvalToken, ...customFields } = resumeInput || {}
+        
+        const output: any = {
+          approveUrl: approvalToken ? `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/approve/${approvalToken}` : '',
+          waitDuration: 0, // Will be calculated during resume
+        }
+        
+        // Check if this is approval mode or custom mode based on presence of 'approved' field
+        if (typeof approved === 'boolean') {
+          // Approval mode
+          output.approved = approved
+        } else {
+          // Custom mode - include all custom fields
+          Object.assign(output, customFields)
         }
         
         logger.info('Returning human approval output', {
           blockId: block.id,
           blockName: block.metadata?.name,
-          output,
+          hasApproved: typeof approved === 'boolean',
+          customFieldsCount: Object.keys(customFields).length,
+          outputKeys: Object.keys(output),
         })
         
         return output
@@ -204,6 +218,7 @@ export class WaitBlockHandler implements BlockHandler {
         // This makes all the API input fields available to downstream blocks
         const output = {
           resumeUrl: `${baseUrl}/api/workflows/${context.workflowId}/executions/resume/${context.executionId}`,
+          waitDuration: 0, // Will be calculated during resume
           ...resumeInput, // All API input fields become available downstream
         }
         
@@ -702,6 +717,9 @@ export class WaitBlockHandler implements BlockHandler {
                 blockId: block.id,
                 context,
                 pausedAt: new Date(pausedAt),
+                resumeType: 'human',
+                humanOperation: inputs.humanOperation || 'approval',
+                humanInputFormat: inputs.humanInputFormat,
               },
               baseUrl
             )
@@ -743,6 +761,9 @@ export class WaitBlockHandler implements BlockHandler {
                 blockId: block.id,
                 context,
                 pausedAt: new Date(pausedAt).toISOString(),
+                resumeType: 'human',
+                humanOperation: inputs.humanOperation || 'approval',
+                humanInputFormat: inputs.humanInputFormat,
               }),
             })
 
@@ -790,12 +811,20 @@ export class WaitBlockHandler implements BlockHandler {
           approveUrl,
         })
 
-        // Return only the actual block outputs (approveUrl and approved)
-        // Other internal fields should not be exposed to API consumers
-        return {
+        // Return outputs based on operation mode
+        const humanOperation = inputs.humanOperation || 'approval'
+        const output: any = {
           approveUrl,
-          approved: false, // Not yet approved
+          waitDuration: 0, // Not yet approved/completed
         }
+        
+        if (humanOperation === 'approval') {
+          // Approval mode: include approved status
+          output.approved = false
+        }
+        // Custom mode: form fields will be added when user submits the form
+        
+        return output
       }
 
       // Handle "API" resume type - programmatic approval via API
@@ -858,6 +887,7 @@ export class WaitBlockHandler implements BlockHandler {
           
           return {
             resumeUrl,
+            waitDuration: 0, // Not yet resumed
             ...responseData,
           }
         }

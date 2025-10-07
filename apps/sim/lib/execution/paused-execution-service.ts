@@ -16,6 +16,8 @@ export interface SavePausedExecutionParams {
   context: ExecutionContext
   pausedAt: Date
   resumeType?: 'human' | 'api'  // Type of resume mechanism
+  humanOperation?: 'approval' | 'custom'  // Human operation mode
+  humanInputFormat?: any  // Input schema for custom form in Human mode
   apiInputFormat?: any  // Input schema for API resume type
   apiResponseMode?: string  // Response mode for API resume (builder/json)
   apiBuilderResponse?: any  // Builder response structure
@@ -53,7 +55,9 @@ export class PausedExecutionService {
       blockId, 
       context, 
       pausedAt, 
-      resumeType = 'human', 
+      resumeType = 'human',
+      humanOperation,
+      humanInputFormat,
       apiInputFormat,
       apiResponseMode,
       apiBuilderResponse,
@@ -152,6 +156,10 @@ export class PausedExecutionService {
           resumeTriggerType: resumeType,
           triggerType, // Save the original trigger type
           pausedAt: pausedAt.toISOString(),
+          ...(resumeType === 'human' && {
+            humanOperation,
+            humanInputFormat,
+          }),
           ...(resumeType === 'api' && {
             apiInputFormat,
             apiResponseMode,

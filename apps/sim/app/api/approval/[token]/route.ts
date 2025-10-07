@@ -48,12 +48,15 @@ export async function GET(
     }
 
     // Return execution details for the UI
+    const metadata = execution.metadata as any
     return NextResponse.json({
       workflowId: execution.workflowId,
       executionId: execution.executionId,
       pausedAt: execution.pausedAt,
       metadata: execution.metadata,
       workflowName: (execution.workflowState as any)?.name || 'Workflow',
+      humanOperation: metadata?.humanOperation || 'approval',
+      humanInputFormat: metadata?.humanInputFormat,
     })
   } catch (error) {
     logger.error('Error retrieving approval details', { error })
@@ -108,7 +111,7 @@ export async function POST(
   try {
     const { token } = await params
     const body = await request.json()
-    const { action } = body // 'approve' or 'reject'
+    const { action, formData } = body // 'approve' or 'reject', and optional custom form data
 
     if (!token) {
       return NextResponse.json({ error: 'Approval token is required' }, { status: 400 })
@@ -229,9 +232,23 @@ export async function POST(
         const approvedAt = new Date()
         const executionTime = approvedAt.getTime() - pausedAt.getTime()
         
-        const approvalOutput = {
+        // Build output based on operation mode
+        const metadata = execution.metadata as any
+        const humanOperation = metadata?.humanOperation || 'approval'
+        
+        const approvalOutput: any = {
           approveUrl: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/approve/${token}`,
-          approved,
+          waitDuration: executionTime,
+        }
+        
+        if (humanOperation === 'approval') {
+          // Approval mode: include approved status
+          approvalOutput.approved = approved
+        } else if (humanOperation === 'custom') {
+          // Custom mode: include all form data fields (no 'approved' field)
+          if (formData) {
+            Object.assign(approvalOutput, formData)
+          }
         }
         
         context.blockStates.set(blockId, {
@@ -351,6 +368,7 @@ export async function POST(
             approved: true,
             approvedAt: new Date().toISOString(),
             approvalToken: token,
+            ...(formData && { ...formData }), // Include custom form data if provided
           },
         }
       )

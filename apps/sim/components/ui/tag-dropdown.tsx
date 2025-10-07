@@ -476,8 +476,8 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
           blockTags = [normalizedBlockName]
         }
       } else {
-        // For triggers and starter blocks, use dynamic outputs based on live subblock values
-        if (blockConfig.category === 'triggers' || sourceBlock.type === 'starter') {
+        // For triggers, starter blocks, and user_approval, use dynamic outputs based on live subblock values
+        if (blockConfig.category === 'triggers' || sourceBlock.type === 'starter' || sourceBlock.type === 'user_approval') {
           const dynamicOutputs = getBlockOutputPaths(sourceBlock.type, mergedSubBlocks)
           if (dynamicOutputs.length > 0) {
             blockTags = dynamicOutputs.map((path) => `${normalizedBlockName}.${path}`)
@@ -710,8 +710,8 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
 
       let blockTags: string[]
 
-      // For trigger blocks, use the dynamic output helper
-      if (blockConfig.category === 'triggers' || accessibleBlock.type === 'starter') {
+      // For trigger blocks and user_approval, use the dynamic output helper
+      if (blockConfig.category === 'triggers' || accessibleBlock.type === 'starter' || accessibleBlock.type === 'user_approval') {
         const dynamicOutputs = getBlockOutputPaths(accessibleBlock.type, mergedSubBlocks)
 
         if (dynamicOutputs.length > 0) {
