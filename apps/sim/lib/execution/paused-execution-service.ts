@@ -156,6 +156,10 @@ export class PausedExecutionService {
           resumeTriggerType: resumeType,
           triggerType, // Save the original trigger type
           pausedAt: pausedAt.toISOString(),
+          // Include parent execution info if this is a child workflow
+          ...((context as any).parentExecutionInfo && {
+            parentExecutionInfo: (context as any).parentExecutionInfo,
+          }),
           ...(resumeType === 'human' && {
             humanOperation,
             humanInputFormat,

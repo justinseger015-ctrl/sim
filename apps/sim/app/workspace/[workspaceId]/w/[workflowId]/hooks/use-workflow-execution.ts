@@ -666,17 +666,41 @@ export function useWorkflowExecution() {
           setExecutionResult(result)
 
           if ((result.metadata as any)?.isPaused) {
-            // Pause persistence is handled in executeWorkflow
-            // Keep debugging state if paused, but mark execution inactive to allow resume button UI
-            logger.info('Workflow paused, keeping executionId active', { executionId })
-            // Don't persist logs when paused - logs will be persisted when execution resumes/completes
+            // Persist the paused execution state to database
+            logger.info('Workflow paused, persisting state', { executionId })
             
-            // Store the paused context for in-memory resume
             const pausedContext = (result.metadata as any)?.context
             if (pausedContext) {
+              // Store in memory for manual resume
               const { setPausedContext } = useExecutionStore.getState()
               setPausedContext(pausedContext)
               logger.info('Stored paused context in store for manual resume', { executionId })
+              
+              // Also persist to database so child workflow completions can trigger parent resume
+              const waitBlockInfo = (result.metadata as any)?.waitBlockInfo
+              if (waitBlockInfo?.blockId) {
+                try {
+                  await fetch('/api/execution/pause', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      workflowId: activeWorkflowId,
+                      executionId,
+                      blockId: waitBlockInfo.blockId,
+                      context: pausedContext,
+                      pausedAt: new Date().toISOString(),
+                      resumeType: waitBlockInfo.resumeType || 'human',
+                      humanOperation: waitBlockInfo.humanOperation,
+                      humanInputFormat: waitBlockInfo.humanInputFormat,
+                    }),
+                  })
+                  logger.info('Persisted parent workflow paused state to database', { executionId })
+                } catch (error) {
+                  logger.error('Failed to persist paused parent workflow state', { error, executionId })
+                }
+              }
             }
             
             setIsExecuting(false)

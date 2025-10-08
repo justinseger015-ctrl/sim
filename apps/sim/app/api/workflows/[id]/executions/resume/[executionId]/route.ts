@@ -174,6 +174,18 @@ export async function POST(
       }
     )
 
+    // Clear pause flags so the resumed executor can continue
+    if ((context as any).shouldPauseAfterBlock) {
+      delete (context as any).shouldPauseAfterBlock
+      delete (context as any).pauseReason
+    }
+    if ((context as any).waitBlockInfo) {
+      delete (context as any).waitBlockInfo
+    }
+    if (context.metadata?.waitBlockInfo) {
+      delete (context.metadata as any).waitBlockInfo
+    }
+
     // Track which blocks were already executed before resume
     const preResumeExecutedBlocks = new Set(context.executedBlocks)
 
@@ -185,9 +197,19 @@ export async function POST(
     const executionResult: ExecutionResult = 'stream' in result && 'execution' in result ? result.execution : result
 
     // Filter logs to only include blocks executed AFTER resume (not before pause)
-    const newLogs = (executionResult.logs || []).filter(log => 
-      !preResumeExecutedBlocks.has(log.blockId)
-    )
+    const newLogs = (executionResult.logs || []).filter((log) => !preResumeExecutedBlocks.has(log.blockId))
+
+    // Append resumed logs to parent paused execution (if still paused) so UI can join logs
+    if (newLogs.length > 0) {
+      try {
+        await pauseResumeService.appendExecutionLogs(executionId, newLogs)
+      } catch (logAppendError) {
+        logger.error('Failed to append resumed execution logs', {
+          executionId,
+          error: logAppendError,
+        })
+      }
+    }
 
     // Check if execution completed or was paused/cancelled again
     const metadata = executionResult.metadata as any
@@ -232,8 +254,71 @@ export async function POST(
           })
         }
       }
+    } else if (!isCancelled && executionResult.success) {
+      // Execution completed successfully - persist the logs
+      try {
+        // Merge pre-resume logs with new logs for complete execution history
+        const prePauseLogs = resumeData.logs || []
+        const allLogs = [...prePauseLogs, ...newLogs]
+        
+        const mergedResult: ExecutionResult = {
+          ...executionResult,
+          logs: allLogs as any,
+        }
+        
+        // Build trace spans from merged execution result
+        const { buildTraceSpans } = await import('@/lib/logs/execution/trace-spans/trace-spans')
+        const { traceSpans, totalDuration } = buildTraceSpans(mergedResult)
+        
+        // Get the original trigger type from metadata
+        const triggerType = resumeData.metadata?.triggerType || 'manual'
+        
+        // Get base URL for API calls
+        const { getBaseUrl } = await import('@/lib/urls/utils')
+        const baseUrl = getBaseUrl()
+        
+        // Persist the completed execution logs
+        const logResponse = await fetch(`${baseUrl}/api/workflows/${workflowId}/log`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Cookie': request.headers.get('cookie') || '',
+          },
+          body: JSON.stringify({
+            executionId,
+            result: {
+              ...mergedResult,
+              metadata: {
+                ...mergedResult.metadata,
+                isPaused: false,
+                source: triggerType === 'chat' ? 'chat' : undefined,
+              },
+              traceSpans,
+              totalDuration,
+            },
+          }),
+        })
+        
+        if (!logResponse.ok) {
+          logger.error('Failed to persist resumed execution logs', {
+            executionId,
+            status: logResponse.status,
+          })
+        } else {
+          logger.info('Successfully persisted parent workflow execution logs', {
+            executionId,
+            workflowId,
+            logsCount: allLogs.length,
+          })
+        }
+      } catch (logError) {
+        logger.error('Error persisting resumed execution logs', {
+          executionId,
+          error: logError,
+        })
+      }
     }
-
+    
     // For API resume type, return the custom configured response to the API caller
     if (resumeType === 'api' && isApiAuth) {
       const metadata = resumeData.metadata as any
@@ -292,7 +377,7 @@ export async function POST(
       error: executionResult.error,
       isPaused,
       isCancelled,
-      logs: newLogs, // Only return logs for blocks executed after resume
+      logs: newLogs,
       metadata: {
         duration: executionResult.metadata?.duration,
         executedBlockCount: context.executedBlocks.size,

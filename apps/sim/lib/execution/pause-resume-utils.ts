@@ -88,32 +88,43 @@ export function serializeExecutionContext(context: ExecutionContext): any {
  * Reconstructs Maps and Sets from their serialized array representations.
  */
 export function deserializeExecutionContext(serialized: any): ExecutionContext {
-  // Reconstruct blockStates Map
-  const blockStates = new Map(
-    serialized.blockStates.map((item: any) => [
-      item.blockId,
-      {
-        output: item.output,
-        executed: item.executed,
-        executionTime: item.executionTime,
-      },
-    ])
-  )
+  // Reconstruct blockStates Map - handle both array and object formats
+  let blockStates: Map<string, any>
   
-  // Reconstruct decisions Maps
-  const decisions = {
-    router: new Map(serialized.decisions.router),
-    condition: new Map(serialized.decisions.condition),
+  if (Array.isArray(serialized.blockStates)) {
+    // Array format from proper serialization
+    blockStates = new Map(
+      serialized.blockStates.map((item: any) => [
+        item.blockId,
+        {
+          output: item.output,
+          executed: item.executed,
+          executionTime: item.executionTime,
+        },
+      ])
+    )
+  } else if (serialized.blockStates && typeof serialized.blockStates === 'object') {
+    // Object format from client-side serialization
+    blockStates = new Map(Object.entries(serialized.blockStates))
+  } else {
+    // Fallback to empty Map
+    blockStates = new Map()
   }
   
-  // Reconstruct loop-related Maps and Sets
-  const loopIterations = new Map(serialized.loopIterations)
-  const loopItems = new Map(serialized.loopItems)
-  const completedLoops = new Set(serialized.completedLoops)
+  // Reconstruct decisions Maps - handle missing or malformed data
+  const decisions = {
+    router: new Map<string, string>(serialized.decisions?.router || []),
+    condition: new Map<string, string>(serialized.decisions?.condition || []),
+  }
+  
+  // Reconstruct loop-related Maps and Sets - handle missing data
+  const loopIterations = new Map<string, number>(serialized.loopIterations || [])
+  const loopItems = new Map<string, any>(serialized.loopItems || [])
+  const completedLoops = new Set<string>(serialized.completedLoops || [])
   
   // Reconstruct parallelExecutions Map
   const parallelExecutions = serialized.parallelExecutions
-    ? new Map(
+    ? (new Map(
         serialized.parallelExecutions.map((item: any) => [
           item.id,
           {
@@ -126,12 +137,12 @@ export function deserializeExecutionContext(serialized: any): ExecutionContext {
             parallelType: item.parallelType,
           },
         ])
-      )
+      ) as any)
     : undefined
   
   // Reconstruct loopExecutions Map
   const loopExecutions = serialized.loopExecutions
-    ? new Map(
+    ? (new Map(
         serialized.loopExecutions.map((item: any) => [
           item.id,
           {
@@ -142,17 +153,17 @@ export function deserializeExecutionContext(serialized: any): ExecutionContext {
             currentIteration: item.currentIteration,
           },
         ])
-      )
+      ) as any)
     : undefined
   
   // Reconstruct parallelBlockMapping Map
   const parallelBlockMapping = serialized.parallelBlockMapping
-    ? new Map(serialized.parallelBlockMapping)
+    ? new Map<string, { originalBlockId: string; parallelId: string; iterationIndex: number }>(serialized.parallelBlockMapping)
     : undefined
   
-  // Reconstruct execution tracking Sets
-  const executedBlocks = new Set(serialized.executedBlocks)
-  const activeExecutionPath = new Set(serialized.activeExecutionPath)
+  // Reconstruct execution tracking Sets - handle missing data
+  const executedBlocks = new Set<string>(serialized.executedBlocks || [])
+  const activeExecutionPath = new Set<string>(serialized.activeExecutionPath || [])
   
   return {
     workflowId: serialized.workflowId,
@@ -160,10 +171,10 @@ export function deserializeExecutionContext(serialized: any): ExecutionContext {
     executionId: serialized.executionId,
     isDeployedContext: serialized.isDeployedContext,
     blockStates,
-    blockLogs: serialized.blockLogs,
-    metadata: serialized.metadata,
-    environmentVariables: serialized.environmentVariables,
-    workflowVariables: serialized.workflowVariables,
+    blockLogs: serialized.blockLogs || [],
+    metadata: serialized.metadata || {},
+    environmentVariables: serialized.environmentVariables || {},
+    workflowVariables: serialized.workflowVariables || {},
     decisions,
     loopIterations,
     loopItems,

@@ -38,6 +38,7 @@ import type { SerializedBlock, SerializedWorkflow } from '@/serializer/types'
 import { useExecutionStore } from '@/stores/execution/store'
 import { useConsoleStore } from '@/stores/panel/console/store'
 import { useGeneralStore } from '@/stores/settings/general/store'
+import { v4 as uuidv4 } from 'uuid'
 
 const logger = createLogger('Executor')
 
@@ -1213,6 +1214,17 @@ export class Executor {
       })
     })
 
+    // Ensure context has an executionId (needed for pause/resume persistence)
+    if (!context.executionId) {
+      if (this.contextExtensions.executionId) {
+        context.executionId = this.contextExtensions.executionId
+      } else {
+        const generatedId = uuidv4()
+        context.executionId = generatedId
+        this.contextExtensions.executionId = generatedId
+      }
+    }
+
     // Initialize loop iterations
     if (this.actualWorkflow.loops) {
       for (const loopId of Object.keys(this.actualWorkflow.loops)) {
@@ -2361,15 +2373,17 @@ export class Executor {
         const streamingExec = rawOutput as StreamingExecution
         const output = (streamingExec.execution as any).output as NormalizedBlockOutput
 
-        context.blockStates.set(blockId, {
-          output,
-          executed: true,
-          executionTime,
-        })
+        const shouldPause = Boolean((context as any).shouldPauseAfterBlock)
 
-        // Also store under the actual block ID for reference
+        if (!shouldPause) {
+          context.blockStates.set(blockId, {
+            output,
+            executed: true,
+            executionTime,
+          })
+        }
+
         if (parallelInfo) {
-          // Store iteration result in parallel state
           this.parallelManager.storeIterationResult(
             context,
             parallelInfo.parallelId,
@@ -2378,34 +2392,28 @@ export class Executor {
           )
         }
 
-        // Store result for loops (IDENTICAL to parallel logic)
         const containingLoopId = this.resolver.getContainingLoopId(block.id)
         if (containingLoopId && !parallelInfo) {
-          // Only store for loops if not already in a parallel (avoid double storage)
           const currentIteration = context.loopIterations.get(containingLoopId)
           if (currentIteration !== undefined) {
             this.loopManager.storeIterationResult(
               context,
               containingLoopId,
-              currentIteration - 1, // Convert to 0-based index
+              currentIteration - 1,
               output
             )
           }
         }
 
-        // Update the execution log
-        blockLog.success = true
+        blockLog.success = !shouldPause
         blockLog.output = output
         blockLog.durationMs = Math.round(executionTime)
         blockLog.endedAt = new Date().toISOString()
 
-        // Handle child workflow logs integration
         this.integrateChildWorkflowLogs(block, output)
 
         context.blockLogs.push(blockLog)
 
-        // Skip console logging for infrastructure blocks and trigger blocks
-        // For streaming blocks, we'll add the console entry after stream processing
         const blockConfig = getBlock(block.metadata?.id || '')
         const isTriggerBlock =
           blockConfig?.category === 'triggers' || block.metadata?.id === BlockType.STARTER
@@ -2414,36 +2422,31 @@ export class Executor {
           block.metadata?.id !== BlockType.PARALLEL &&
           !isTriggerBlock
         ) {
-          // Determine iteration context for this block
           let iterationCurrent: number | undefined
           let iterationTotal: number | undefined
           let iterationType: 'loop' | 'parallel' | undefined
           const blockName = block.metadata?.name || 'Unnamed Block'
 
           if (parallelInfo) {
-            // This is a parallel iteration
             const parallelState = context.parallelExecutions?.get(parallelInfo.parallelId)
             iterationCurrent = parallelInfo.iterationIndex + 1
             iterationTotal = parallelState?.parallelCount
             iterationType = 'parallel'
           } else {
-            // Check if this block is inside a loop
-            const containingLoopId = this.resolver.getContainingLoopId(block.id)
-            if (containingLoopId) {
-              const currentIteration = context.loopIterations.get(containingLoopId)
-              const loop = context.workflow?.loops?.[containingLoopId]
+            const innerContainingLoopId = this.resolver.getContainingLoopId(block.id)
+            if (innerContainingLoopId) {
+              const currentIteration = context.loopIterations.get(innerContainingLoopId)
+              const loop = context.workflow?.loops?.[innerContainingLoopId]
               if (currentIteration !== undefined && loop) {
                 iterationCurrent = currentIteration
                 if (loop.loopType === 'forEach') {
-                  // For forEach loops, get the total from the items
-                  const forEachItems = context.loopItems.get(`${containingLoopId}_items`)
+                  const forEachItems = context.loopItems.get(`${innerContainingLoopId}_items`)
                   if (forEachItems) {
                     iterationTotal = Array.isArray(forEachItems)
                       ? forEachItems.length
                       : Object.keys(forEachItems).length
                   }
                 } else {
-                  // For regular loops, use the iterations count
                   iterationTotal = loop.iterations || 5
                 }
                 iterationType = 'loop'
@@ -2454,7 +2457,7 @@ export class Executor {
           addConsole({
             input: blockLog.input,
             output: blockLog.output,
-            success: true,
+            success: blockLog.success,
             durationMs: blockLog.durationMs,
             startedAt: blockLog.startedAt,
             endedAt: blockLog.endedAt,
@@ -2477,7 +2480,7 @@ export class Executor {
           blockType: block.metadata?.id || 'unknown',
           blockName: block.metadata?.name || 'Unnamed Block',
           durationMs: Math.round(executionTime),
-          success: true,
+          success: blockLog.success,
         })
 
         return streamingExec
@@ -2491,13 +2494,17 @@ export class Executor {
             ? rawOutput
             : { result: rawOutput }
 
+      const shouldPauseNonStream = Boolean((context as any).shouldPauseAfterBlock)
+
       // Update the context with the execution result
       // Use virtual block ID for parallel executions
-      context.blockStates.set(blockId, {
-        output,
-        executed: true,
-        executionTime,
-      })
+      if (!shouldPauseNonStream) {
+        context.blockStates.set(blockId, {
+          output,
+          executed: true,
+          executionTime,
+        })
+      }
 
       // Also store under the actual block ID for reference
       if (parallelInfo) {
@@ -2526,7 +2533,7 @@ export class Executor {
       }
 
       // Update the execution log
-      blockLog.success = true
+      blockLog.success = !shouldPauseNonStream
       blockLog.output = output
       blockLog.durationMs = Math.round(executionTime)
       blockLog.endedAt = new Date().toISOString()
@@ -2608,7 +2615,7 @@ export class Executor {
         blockType: block.metadata?.id || 'unknown',
         blockName: block.metadata?.name || 'Unnamed Block',
         durationMs: Math.round(executionTime),
-        success: true,
+        success: blockLog.success,
       })
 
       if (context.onBlockComplete && !isNonStreamTriggerBlock) {
@@ -3048,5 +3055,9 @@ export class Executor {
     if (!Array.isArray(childTraceSpans) || childTraceSpans.length === 0) {
       return
     }
+
+    // Store child trace spans in the output for later processing during log persistence
+    // This ensures that when parent workflow logs are built, the child workflow logs are included
+    output.childTraceSpans = childTraceSpans
   }
 }

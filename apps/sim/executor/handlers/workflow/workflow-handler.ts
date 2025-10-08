@@ -162,10 +162,42 @@ export class WorkflowBlockHandler implements BlockHandler {
       const executionResult = this.toExecutionResult(result)
       const duration = performance.now() - startTime
 
+      // Check if child execution paused (e.g., due to HITL/wait block)
+      if (result?.success && result.metadata?.isPaused) {
+        const childContext = result.metadata.context as ExecutionContext | undefined
+
+        if (childContext && ((childContext as any).shouldPauseAfterBlock || (childContext as any).waitBlockInfo)) {
+          logger.info('Child workflow paused - propagating pause to parent executor', {
+            parentWorkflowId: context.workflowId,
+            childWorkflowId: workflowId,
+            childExecutionId: childContext.executionId,
+            parentBlockId: block.id,
+          })
+
+          ;(context as any).shouldPauseAfterBlock = true
+          ;(context as any).waitBlockInfo = (childContext as any).waitBlockInfo
+          if ((childContext as any).pauseReason) {
+            ;(context as any).pauseReason = (childContext as any).pauseReason
+          }
+
+          ;(context as any).childPausedInfo = {
+            workflowId,
+            executionId: childContext.executionId,
+            parentBlockId: block.id,
+          }
+
+          return {
+            success: true,
+            isPaused: true,
+            metadata: result.metadata,
+          } as BlockOutput
+        }
+      }
+
       // With Redis sleep/wake, child workflows handle their own waits internally using BLPOP.
       // The parent workflow naturally waits because the await on line 143 blocks until 
       // the child's executor.execute() call completes (including any Redis waits).
-      // No need to propagate pauses or return early.
+      // No need to propagate pauses or return early when child completes normally.
 
       logger.info(`Child workflow ${childWorkflowName} completed in ${Math.round(duration)}ms`)
 

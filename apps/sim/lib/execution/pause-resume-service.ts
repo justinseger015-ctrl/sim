@@ -11,6 +11,16 @@ import {
   serializeWorkflowState,
 } from './pause-resume-utils'
 
+type PausedExecutionLogEntry = {
+  blockId: string
+  output?: any
+  error?: string
+  success?: boolean
+  durationMs?: number
+  startedAt?: string
+  endedAt?: string
+}
+
 const logger = createLogger('PauseResumeService')
 
 export interface PausedExecutionData {
@@ -45,6 +55,7 @@ export interface ResumeExecutionData {
   environmentVariables: Record<string, string>
   workflowInput?: any
   metadata: Record<string, any>
+  logs?: PausedExecutionLogEntry[]
 }
 
 /**
@@ -67,6 +78,14 @@ export class PauseResumeService {
     } = params
 
     logger.info(`Pausing execution ${executionId} for workflow ${workflowId}`)
+    
+    // Include parent execution info in metadata if present in context
+    const enhancedMetadata = {
+      ...metadata,
+      ...((executionContext as any).parentExecutionInfo && {
+        parentExecutionInfo: (executionContext as any).parentExecutionInfo,
+      }),
+    }
 
     // Serialize the execution context
     const serializedContext = serializeExecutionContext(executionContext)
@@ -89,7 +108,7 @@ export class PauseResumeService {
           workflowState: serializedWorkflowState,
           environmentVariables,
           workflowInput,
-          metadata,
+          metadata: enhancedMetadata,
           pausedAt: new Date(),
           updatedAt: new Date(),
         })
@@ -125,7 +144,7 @@ export class PauseResumeService {
         workflowState: serializedWorkflowState,
         environmentVariables,
         workflowInput,
-        metadata,
+        metadata: enhancedMetadata,
       })
       .returning()
 
@@ -213,6 +232,33 @@ export class PauseResumeService {
   }
 
   /**
+   * Gets a paused execution without deleting it (for inspection/updates)
+   */
+  async getPausedExecutionData(executionId: string): Promise<ResumeExecutionData | null> {
+    logger.info(`Getting paused execution data for ${executionId}`)
+
+    const paused = await this.getPausedExecution(executionId)
+
+    if (!paused) {
+      logger.warn(`No paused execution found for ${executionId}`)
+      return null
+    }
+
+    logger.info(`Successfully retrieved paused state for execution ${executionId}`)
+
+    return {
+      executionContext: paused.executionContext,
+      workflowState: paused.workflowState,
+      environmentVariables: paused.environmentVariables,
+      workflowInput: paused.workflowInput,
+      metadata: paused.metadata,
+      logs: Array.isArray((paused.metadata as any)?.logs)
+        ? ((paused.metadata as any).logs as PausedExecutionLogEntry[])
+        : [],
+    }
+  }
+
+  /**
    * Resumes a paused execution and removes it from the paused executions table
    */
   async resumeExecution(executionId: string): Promise<ResumeExecutionData | null> {
@@ -238,6 +284,9 @@ export class PauseResumeService {
       environmentVariables: paused.environmentVariables,
       workflowInput: paused.workflowInput,
       metadata: paused.metadata,
+      logs: Array.isArray((paused.metadata as any)?.logs)
+        ? ((paused.metadata as any).logs as PausedExecutionLogEntry[])
+        : [],
     }
   }
 
@@ -272,6 +321,34 @@ export class PauseResumeService {
       .limit(1)
 
     return !!paused
+  }
+
+  async appendExecutionLogs(executionId: string, logs: PausedExecutionLogEntry[]): Promise<void> {
+    if (!logs || logs.length === 0) {
+      return
+    }
+
+    const paused = await this.getPausedExecution(executionId)
+    if (!paused) {
+      return
+    }
+
+    const existingLogs: PausedExecutionLogEntry[] = Array.isArray((paused.metadata as any)?.logs)
+      ? ((paused.metadata as any).logs as PausedExecutionLogEntry[])
+      : []
+
+    const updatedLogs = [...existingLogs, ...logs]
+
+    await db
+      .update(pausedWorkflowExecutions)
+      .set({
+        metadata: {
+          ...(paused.metadata as Record<string, any>),
+          logs: updatedLogs,
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(pausedWorkflowExecutions.executionId, executionId))
   }
 }
 
