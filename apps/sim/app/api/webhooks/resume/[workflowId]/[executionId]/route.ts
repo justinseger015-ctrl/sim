@@ -417,12 +417,19 @@ export async function POST(
           const workflowState = executionContext.workflow || resumeData.workflowState
           const environmentVariables =
             executionContext.environmentVariables || resumeData.environmentVariables || {}
+          
+          // Merge pre-pause and new logs for saving if paused again
+          const prePauseLogs = resumeData.logs || []
+          const allLogsForPause = [...prePauseLogs, ...newLogs]
+          
           const pauseMetadata = {
             ...(resumeData.metadata || {}),
             ...metadataWithoutContext,
             waitBlockInfo,
             isDeployedContext: true,
             deploymentVersionId: resumeData.metadata?.deploymentVersionId,
+            // Save merged logs so they're available if resumed again
+            logs: allLogsForPause,
           }
 
           await pauseResumeService.pauseExecution({
@@ -504,9 +511,8 @@ export async function POST(
             // Build child workflow trace spans to include in parent's logs
             const { traceSpans: childTraceSpans } = buildTraceSpans(executionResult)
             
-            // Deserialize the parent's execution context
-            const { deserializeExecutionContext } = await import('@/lib/execution/pause-resume-utils')
-            const parentContext = deserializeExecutionContext(parentResumeData.executionContext)
+            // Parent execution context is already deserialized by getPausedExecutionData
+            const parentContext = parentResumeData.executionContext
             
             if (!(parentContext as any).shouldPauseAfterBlock) {
               parentContext.blockStates.set(parentInfo.blockId, {

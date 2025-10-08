@@ -107,6 +107,15 @@ export class PausedExecutionService {
     // We need to convert those objects back into the proper array format for storage
     let serializedContext: any
     
+    logger.info('Serializing execution context for pause', {
+      executionId,
+      blockStatesType: typeof context.blockStates,
+      blockStatesIsMap: context.blockStates instanceof Map,
+      blockStatesKeys: context.blockStates instanceof Map 
+        ? Array.from(context.blockStates.keys())
+        : Object.keys(context.blockStates || {}),
+    })
+    
     if (context.blockStates instanceof Map) {
       // Server-side context with Maps/Sets - needs serialization
       serializedContext = serializeExecutionContext(context)
@@ -119,6 +128,12 @@ export class PausedExecutionService {
         executed: blockStatesObj[blockId]?.executed || false,
         executionTime: blockStatesObj[blockId]?.executionTime || 0,
       }))
+      
+      logger.info('Converted client-side blockStates to array', {
+        executionId,
+        inputObjectKeys: Object.keys(blockStatesObj || {}).length,
+        outputArrayLength: blockStatesArray.length,
+      })
 
       const decisionsObj = context.decisions as any
       const routerArray = decisionsObj?.router ? Object.entries(decisionsObj.router) : []

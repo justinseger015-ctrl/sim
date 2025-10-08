@@ -88,6 +88,21 @@ export function serializeExecutionContext(context: ExecutionContext): any {
  * Reconstructs Maps and Sets from their serialized array representations.
  */
 export function deserializeExecutionContext(serialized: any): ExecutionContext {
+  // Debug: Log what we're deserializing
+  const blockStatesType = Array.isArray(serialized.blockStates) ? 'array' : typeof serialized.blockStates
+  const blockStatesLength = Array.isArray(serialized.blockStates) 
+    ? serialized.blockStates.length 
+    : serialized.blockStates && typeof serialized.blockStates === 'object'
+      ? Object.keys(serialized.blockStates).length
+      : 0
+  
+  console.log('[deserializeExecutionContext] Input blockStates', {
+    type: blockStatesType,
+    length: blockStatesLength,
+    isArray: Array.isArray(serialized.blockStates),
+    sample: Array.isArray(serialized.blockStates) ? serialized.blockStates[0] : serialized.blockStates,
+  })
+  
   // Reconstruct blockStates Map - handle both array and object formats
   let blockStates: Map<string, any>
   
@@ -110,6 +125,8 @@ export function deserializeExecutionContext(serialized: any): ExecutionContext {
     // Fallback to empty Map
     blockStates = new Map()
   }
+  
+  console.log('[deserializeExecutionContext] Output blockStates Map size', blockStates.size)
   
   // Reconstruct decisions Maps - handle missing or malformed data
   const decisions = {

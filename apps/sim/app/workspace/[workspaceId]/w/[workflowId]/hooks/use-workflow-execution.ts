@@ -680,6 +680,8 @@ export function useWorkflowExecution() {
               const waitBlockInfo = (result.metadata as any)?.waitBlockInfo
               if (waitBlockInfo?.blockId) {
                 try {
+                  // Send context as-is - the paused-execution-service will handle serialization
+                  // JSON.stringify will convert Maps/Sets to plain objects, which the service expects
                   await fetch('/api/execution/pause', {
                     method: 'POST',
                     headers: {

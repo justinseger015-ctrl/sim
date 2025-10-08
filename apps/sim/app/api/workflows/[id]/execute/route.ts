@@ -433,6 +433,8 @@ export async function executeWorkflow(
             isDeployedContext: true,
             deploymentVersionId,
             parentExecutionInfo: (result.metadata?.context as any)?.parentExecutionInfo,
+            // Save block logs from before pause so they can be merged on resume
+            logs: result.logs || [],
           },
         })
         logger.info(`[${requestId}] Successfully persisted paused execution state`)

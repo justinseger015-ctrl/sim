@@ -497,9 +497,16 @@ export async function POST(
                     .where(eq(workflowTable.id, execution.workflowId))
                     .limit(1)
                   
-                  // Deserialize the parent's execution context
-                  const { deserializeExecutionContext } = await import('@/lib/execution/pause-resume-utils')
-                  const parentContext = deserializeExecutionContext(parentResumeData.executionContext)
+                  // Parent execution context is already deserialized by getPausedExecutionData
+                  const parentContext = parentResumeData.executionContext
+                  
+                  logger.info('Parent context retrieved', {
+                    executionId: parentInfo.executionId,
+                    blockStatesCount: parentContext.blockStates.size,
+                    blockStateIds: Array.from(parentContext.blockStates.keys()),
+                    executedBlocksCount: parentContext.executedBlocks.size,
+                    executedBlockIds: Array.from(parentContext.executedBlocks),
+                  })
                   
                   if (!(parentContext as any).shouldPauseAfterBlock) {
                     parentContext.blockStates.set(parentInfo.blockId, {

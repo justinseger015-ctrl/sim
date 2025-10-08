@@ -98,12 +98,31 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       
       // Handle non-paused executions - complete the log
       if (existingLog.length > 0 && existingLog[0].endedAt) {
-        // Log already completed - skip
-        logger.info(`[${requestId}] Log already completed, skipping`, {
-          executionId,
-        })
+        // Log already exists and is marked as completed
+        // Check if this is a resumed execution with new trace spans to update
+        const hasTraceSpans = result.traceSpans && Array.isArray(result.traceSpans) && result.traceSpans.length > 0
+        
+        if (hasTraceSpans) {
+          // This is a resumed execution with trace spans - update the existing log
+          logger.info(`[${requestId}] Updating completed log with trace spans from resumed execution`, {
+            executionId,
+            traceSpansCount: result.traceSpans.length,
+          })
+          
+          await loggingSession.safeComplete({
+            endedAt: new Date().toISOString(),
+            totalDurationMs: result.metadata?.duration || result.totalDuration || 0,
+            finalOutput: result.output || {},
+            traceSpans: result.traceSpans,
+          })
+        } else {
+          // Log already completed and no new trace spans - skip
+          logger.info(`[${requestId}] Log already completed, skipping`, {
+            executionId,
+          })
+        }
       } else {
-        // Complete the log
+        // Complete the log for the first time
         if (result.success === false) {
           const message = result.error || 'Workflow execution failed'
           await loggingSession.safeCompleteWithError({

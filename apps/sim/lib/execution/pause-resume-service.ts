@@ -77,7 +77,13 @@ export class PauseResumeService {
       metadata = {},
     } = params
 
-    logger.info(`Pausing execution ${executionId} for workflow ${workflowId}`)
+    logger.info(`Pausing execution ${executionId} for workflow ${workflowId}`, {
+      blockStatesSize: executionContext.blockStates?.size || 0,
+      blockStatesKeys: executionContext.blockStates instanceof Map 
+        ? Array.from(executionContext.blockStates.keys())
+        : 'not a Map',
+      executedBlocksSize: executionContext.executedBlocks?.size || 0,
+    })
     
     // Include parent execution info in metadata if present in context
     const enhancedMetadata = {
@@ -90,6 +96,12 @@ export class PauseResumeService {
     // Serialize the execution context
     const serializedContext = serializeExecutionContext(executionContext)
     const serializedWorkflowState = serializeWorkflowState(workflowState)
+    
+    logger.info(`Serialized context for pause`, {
+      executionId,
+      serializedBlockStatesLength: serializedContext.blockStates?.length || 0,
+      serializedExecutedBlocksLength: serializedContext.executedBlocks?.length || 0,
+    })
 
     // Check if this execution is already paused
     const existing = await db

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@sim/db'
-import { workflow as workflowTable } from '@sim/db/schema'
+import { workflow as workflowTable, pausedWorkflowExecutions } from '@sim/db/schema'
 import { eq } from 'drizzle-orm'
 import { getSession } from '@/lib/auth'
 import { createLogger } from '@/lib/logs/console/logger'
@@ -231,10 +231,17 @@ export async function POST(
             (executionContext.workflow as SerializedWorkflow) || resumeData.workflowState
           const environmentVariables =
             executionContext.environmentVariables || resumeData.environmentVariables || {}
+          
+          // Merge pre-pause and new logs for saving if paused again
+          const prePauseLogs = resumeData.logs || []
+          const allLogsForPause = [...prePauseLogs, ...newLogs]
+          
           const pauseMetadata = {
             ...(resumeData.metadata || {}),
             ...metadataWithoutContext,
             waitBlockInfo,
+            // Save merged logs so they're available if resumed again
+            logs: allLogsForPause,
           }
 
           await pauseResumeService.pauseExecution({
@@ -310,6 +317,163 @@ export async function POST(
             workflowId,
             logsCount: allLogs.length,
           })
+        }
+        
+        // Check if this was a child workflow that needs to resume its parent
+        if (resumeData.metadata?.parentExecutionInfo) {
+          const parentInfo = resumeData.metadata.parentExecutionInfo as any
+          logger.info('Child workflow completed via resume, checking if parent needs to resume', {
+            parentWorkflowId: parentInfo.workflowId,
+            parentExecutionId: parentInfo.executionId,
+            parentBlockId: parentInfo.blockId,
+          })
+          
+          // Check if parent execution is paused
+          if (parentInfo.executionId) {
+            try {
+              const parentResumeData = await pauseResumeService.getPausedExecutionData(parentInfo.executionId)
+              
+              if (parentResumeData) {
+                logger.info('Found paused parent execution, triggering resume', {
+                  parentExecutionId: parentInfo.executionId,
+                })
+                
+                // Update parent's block state with child workflow result
+                const childResult = executionResult.output || {}
+                const duration = totalDuration || 0
+                
+                // Get workflow data for child workflow name
+                const [childWorkflowData] = await db
+                  .select()
+                  .from(workflowTable)
+                  .where(eq(workflowTable.id, workflowId))
+                  .limit(1)
+                
+                // Parent execution context is already deserialized by getPausedExecutionData
+                const parentContext = parentResumeData.executionContext
+                
+                if (!(parentContext as any).shouldPauseAfterBlock) {
+                  parentContext.blockStates.set(parentInfo.blockId, {
+                    output: {
+                      success: executionResult.success,
+                      childWorkflowName: childResult.childWorkflowName || childWorkflowData?.name || 'Child Workflow',
+                      childWorkflowId: workflowId,
+                      result: childResult,
+                      error: executionResult.error,
+                      // Include child workflow trace spans
+                      childTraceSpans: traceSpans || [],
+                    },
+                    executed: true,
+                    executionTime: duration,
+                  })
+                }
+                
+                // Mark the workflow block as executed in the parent context
+                parentContext.executedBlocks.add(parentInfo.blockId)
+                
+                // Activate downstream blocks from the workflow block (same as HITL block resume)
+                const parentConnections = parentResumeData.workflowState.connections || []
+                for (const conn of parentConnections) {
+                  if (conn.source === parentInfo.blockId) {
+                    parentContext.activeExecutionPath.add(conn.target)
+                    logger.info('Activated downstream block from workflow block', {
+                      source: parentInfo.blockId,
+                      target: conn.target,
+                    })
+                  }
+                }
+                
+                // Add child workflow block log to parent's block logs
+                const childWorkflowLog = {
+                  blockId: parentInfo.blockId,
+                  blockName: `${childResult.childWorkflowName || childWorkflowData?.name || 'Child Workflow'} workflow`,
+                  blockType: 'workflow',
+                  startedAt: new Date(Date.now() - duration).toISOString(),
+                  endedAt: new Date().toISOString(),
+                  durationMs: duration,
+                  success: executionResult.success,
+                  input: {
+                    workflowId: workflowId,
+                  },
+                  output: {
+                    success: executionResult.success,
+                    childWorkflowName: childResult.childWorkflowName || childWorkflowData?.name || 'Child Workflow',
+                    result: childResult,
+                    childTraceSpans: traceSpans || [],
+                  },
+                  error: executionResult.error,
+                }
+                parentContext.blockLogs.push(childWorkflowLog)
+                
+                // Also add to metadata logs so it survives the resume filtering
+                const existingMetadataLogs = Array.isArray(parentResumeData.metadata?.logs) 
+                  ? parentResumeData.metadata.logs 
+                  : []
+                const updatedMetadata = {
+                  ...parentResumeData.metadata,
+                  logs: [...existingMetadataLogs, childWorkflowLog],
+                }
+                
+                // Serialize the updated context back
+                const { serializeExecutionContext } = await import('@/lib/execution/pause-resume-utils')
+                const updatedSerializedContext = serializeExecutionContext(parentContext)
+                
+                // Update the parent's paused execution with the new context and metadata
+                await db
+                  .update(pausedWorkflowExecutions)
+                  .set({
+                    executionContext: updatedSerializedContext,
+                    metadata: updatedMetadata,
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(pausedWorkflowExecutions.executionId, parentInfo.executionId))
+                
+                logger.info('Updated parent execution context with child result')
+                
+                // Trigger parent workflow resume via internal API call
+                // Use the same endpoint recursively (works for both manual and deployed)
+                const parentResumeUrl = `${baseUrl}/api/workflows/${parentInfo.workflowId}/executions/resume/${parentInfo.executionId}`
+                
+                logger.info('Triggering parent workflow resume', {
+                  parentExecutionId: parentInfo.executionId,
+                  endpoint: parentResumeUrl,
+                })
+                
+                try {
+                  const parentResumeResponse = await fetch(parentResumeUrl, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Cookie': request.headers.get('cookie') || '',
+                    },
+                    body: JSON.stringify({
+                      // Pass child completion info
+                      childWorkflowCompleted: true,
+                      childWorkflowId: workflowId,
+                      childWorkflowResult: childResult,
+                    }),
+                  })
+                  
+                  if (!parentResumeResponse.ok) {
+                    const errorText = await parentResumeResponse.text()
+                    logger.error('Failed to resume parent workflow', {
+                      status: parentResumeResponse.status,
+                      error: errorText,
+                    })
+                  } else {
+                    logger.info('Successfully triggered parent workflow resume', {
+                      parentWorkflowId: parentInfo.workflowId,
+                      parentExecutionId: parentInfo.executionId,
+                    })
+                  }
+                } catch (resumeError) {
+                  logger.error('Error triggering parent workflow resume', resumeError)
+                }
+              }
+            } catch (error) {
+              logger.error('Error checking parent execution status', error)
+            }
+          }
         }
       } catch (logError) {
         logger.error('Error persisting resumed execution logs', {
