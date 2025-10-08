@@ -989,6 +989,7 @@ export function ToolInput({
           }}
           value={value}
           onChange={onChange}
+          parentBlockId={blockId}
         />
       )
     }
@@ -1036,6 +1037,7 @@ export function ToolInput({
             }}
             value={value}
             onChange={onChange}
+            parentBlockId={blockId}
           />
         )
 
@@ -1055,6 +1057,7 @@ export function ToolInput({
             value={value}
             onChange={onChange}
             disabled={disabled}
+            parentBlockId={blockId}
           />
         )
 
@@ -1218,6 +1221,7 @@ export function ToolInput({
             }}
             value={value}
             onChange={onChange}
+            parentBlockId={blockId}
           />
         )
     }
@@ -1760,6 +1764,7 @@ export function ToolInput({
                                     onChange={(value) =>
                                       handleParamChange(toolIndex, param.id, value)
                                     }
+                                    parentBlockId={blockId}
                                   />
                                 )}
                               </div>

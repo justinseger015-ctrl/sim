@@ -73,6 +73,62 @@ export class WaitBlockHandler implements BlockHandler {
   }
 
   /**
+   * Send notification using the configured tool (same format as agent block tools)
+   * Re-resolves tool parameters to handle references to the HITL block's outputs
+   */
+  private async sendNotification(
+    notificationTools: any[],
+    approveUrl: string,
+    context: ExecutionContext,
+    currentBlock: SerializedBlock
+  ): Promise<void> {
+    if (!Array.isArray(notificationTools) || notificationTools.length === 0) {
+      return
+    }
+
+    // Execute each configured notification tool
+    for (const tool of notificationTools) {
+      try {
+        logger.info('Sending approval notification', {
+          toolId: tool.toolId,
+          type: tool.type,
+          approveUrl,
+          currentBlockId: currentBlock.id,
+          currentBlockName: currentBlock.metadata?.name,
+        })
+
+        // Re-resolve tool parameters to handle references to the HITL block's outputs
+        // This is necessary because the approval URL is generated after initial input resolution
+        const resolvedParams = this.resolveToolParameters(tool.params || {}, context, currentBlock)
+        
+        logger.info('Resolved tool parameters', {
+          toolId: tool.toolId,
+          originalParams: tool.params,
+          resolvedParams,
+        })
+        
+        await executeTool(
+          tool.toolId,
+          resolvedParams,
+          false, // skipProxy
+          false, // skipPostProcess
+          context // executionContext
+        )
+
+        logger.info('Notification sent successfully', {
+          toolId: tool.toolId,
+        })
+      } catch (error) {
+        logger.error('Failed to send notification', {
+          toolId: tool.toolId,
+          error,
+        })
+        // Don't throw - continue even if notification fails
+      }
+    }
+  }
+
+  /**
    * Parse API response data using the same logic as Response block
    * Handles self-references to resumeUrl by manually replacing them
    */
@@ -811,7 +867,7 @@ export class WaitBlockHandler implements BlockHandler {
           approveUrl,
         })
 
-        // Return outputs based on operation mode
+        // Build the output early so it's available for notification tools
         const humanOperation = inputs.humanOperation || 'approval'
         const output: any = {
           approveUrl,
@@ -823,6 +879,26 @@ export class WaitBlockHandler implements BlockHandler {
           output.approved = false
         }
         // Custom mode: form fields will be added when user submits the form
+
+        // Temporarily set the block output in context so notification tools can reference it
+        context.blockStates.set(block.id, {
+          output,
+          executed: false, // Not fully executed yet
+          executionTime: 0,
+        })
+
+        // Send notification if configured
+        const notificationTools = inputs.notificationTool
+        if (notificationTools && Array.isArray(notificationTools) && notificationTools.length > 0) {
+          try {
+            await this.sendNotification(notificationTools, approveUrl, context, block)
+          } catch (notifError) {
+            logger.error('Failed to send approval notification', {
+              error: notifError,
+            })
+            // Don't fail the block execution if notification fails
+          }
+        }
         
         return output
       }
@@ -1128,5 +1204,154 @@ export class WaitBlockHandler implements BlockHandler {
     return {
       status: 'completed',
     }
+  }
+
+  /**
+   * Resolves tool parameters by handling block references
+   * This is needed because the HITL block's outputs (like approveUrl) are generated
+   * after the initial input resolution phase
+   */
+  private resolveToolParameters(
+    params: Record<string, any>,
+    context: ExecutionContext,
+    currentBlock: SerializedBlock
+  ): Record<string, any> {
+    // Helper to normalize identifiers (names, IDs, map keys)
+    const normalizeIdentifier = (value: string): string => {
+      return value.toLowerCase().replace(/[^a-z0-9]/g, '')
+    }
+
+    const resolveValue = (value: any): any => {
+      if (typeof value === 'string') {
+        const blockReferencePattern = /<([^.>]+)\.([^>]+)>/g
+        let resolvedValue = value
+        let match
+
+        // Reset lastIndex to ensure clean iteration for each new string
+        blockReferencePattern.lastIndex = 0
+
+        while ((match = blockReferencePattern.exec(value)) !== null) {
+          const [fullMatch, blockRef, property] = match
+          const blockState = this.findBlockStateByReference(blockRef, context, currentBlock, normalizeIdentifier)
+
+          if (blockState?.output) {
+            const outputValue = this.getPropertyValue(blockState.output, property)
+
+            logger.info('Resolved block reference for tool parameter', {
+              blockRef,
+              property,
+              hasOutput: outputValue !== undefined,
+              outputType: typeof outputValue,
+            })
+
+            if (outputValue !== undefined) {
+              resolvedValue = resolvedValue.replace(fullMatch, String(outputValue))
+            }
+          } else {
+            logger.warn('Unable to resolve block reference for tool parameter', {
+              blockRef,
+              property,
+              availableBlockStates: Array.from(context.blockStates.keys()),
+              currentBlockId: currentBlock.id,
+            })
+          }
+        }
+
+        return resolvedValue
+      }
+
+      if (Array.isArray(value)) {
+        return value.map((item) => resolveValue(item))
+      }
+
+      if (value && typeof value === 'object') {
+        const resolvedObject: Record<string, any> = {}
+        for (const [nestedKey, nestedValue] of Object.entries(value)) {
+          resolvedObject[nestedKey] = resolveValue(nestedValue)
+        }
+        return resolvedObject
+      }
+
+      return value
+    }
+
+    const resolvedParams: Record<string, any> = {}
+    for (const [key, value] of Object.entries(params)) {
+      resolvedParams[key] = resolveValue(value)
+    }
+
+    return resolvedParams
+  }
+
+  private findBlockStateByReference(
+    blockRef: string,
+    context: ExecutionContext,
+    currentBlock: SerializedBlock,
+    normalizeIdentifier: (value: string) => string
+  ) {
+    const normalizedRef = normalizeIdentifier(blockRef)
+
+    // Direct lookup by original key
+    let blockState = context.blockStates.get(blockRef)
+    if (blockState) {
+      return blockState
+    }
+
+    const normalizedCurrentId = normalizeIdentifier(currentBlock.id)
+    const normalizedCurrentName = currentBlock.metadata?.name
+      ? normalizeIdentifier(currentBlock.metadata.name)
+      : ''
+
+    // Check if this is a self-reference to the current block
+    if (normalizedRef === normalizedCurrentId || normalizedRef === normalizedCurrentName) {
+      blockState = context.blockStates.get(currentBlock.id)
+      if (blockState) {
+        return blockState
+      }
+    }
+
+    // Check workflow blocks by ID or name
+    if (context.workflow) {
+      for (const block of context.workflow.blocks) {
+        const normalizedBlockId = normalizeIdentifier(block.id)
+        const normalizedBlockName = block.metadata?.name
+          ? normalizeIdentifier(block.metadata.name)
+          : ''
+
+        if (normalizedRef === normalizedBlockId || normalizedRef === normalizedBlockName) {
+          blockState = context.blockStates.get(block.id)
+          if (blockState) {
+            return blockState
+          }
+        }
+      }
+    }
+
+    // As a last resort, scan all stored block states for a normalized key match (handles virtual IDs)
+    for (const [stateKey, stateValue] of context.blockStates.entries()) {
+      if (normalizeIdentifier(stateKey) === normalizedRef) {
+        return stateValue
+      }
+    }
+
+    return undefined
+  }
+
+  /**
+   * Helper to get nested property value from an object
+   */
+  private getPropertyValue(obj: any, propertyPath: string): any {
+    const parts = propertyPath.split('.')
+    let current = obj
+    
+    for (const part of parts) {
+      if (current && typeof current === 'object' && part in current) {
+        current = current[part]
+      } else {
+        return undefined
+      }
+    }
+    
+    return current
   }
 }

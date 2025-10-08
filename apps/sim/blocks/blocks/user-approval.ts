@@ -67,6 +67,15 @@ export const UserApprovalBlock: BlockConfig = {
         and: { field: 'humanOperation', value: 'custom' },
       },
     },
+    // Notification tool
+    {
+      id: 'notificationTool',
+      title: 'Send Notification',
+      type: 'tool-input',
+      layout: 'full',
+      description: 'Configure a tool to send the approval link notification',
+      condition: { field: 'resumeTriggerType', value: 'human' },
+    },
     // API input format configuration
     {
       id: 'apiInputFormat',
@@ -214,7 +223,15 @@ export const UserApprovalBlock: BlockConfig = {
     },
   ],
   tools: {
-    access: [],
+    access: [
+      'gmail_send',
+      'outlook_send_email',
+      'slack_message',
+      'discord_send_message',
+      'telegram_send_message',
+      'twilio_send_sms',
+      'whatsapp_send_message',
+    ],
   },
   inputs: {
     resumeTriggerType: {
@@ -264,6 +281,10 @@ export const UserApprovalBlock: BlockConfig = {
     humanInputFormat: {
       type: 'json',
       description: 'Input schema for custom form fields in Human mode',
+    },
+    notificationTool: {
+      type: 'json',
+      description: 'Tool configuration for sending approval notifications',
     },
     apiInputFormat: {
       type: 'json',

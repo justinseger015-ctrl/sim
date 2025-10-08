@@ -30,6 +30,7 @@ interface LongInputProps {
   value?: string
   onChange?: (value: string) => void
   disabled?: boolean
+  parentBlockId?: string // For tool inputs to access parent block's accessible prefixes
 }
 
 // Constants
@@ -49,6 +50,7 @@ export function LongInput({
   value: propValue,
   onChange,
   disabled,
+  parentBlockId,
 }: LongInputProps) {
   const params = useParams()
   const workspaceId = params.workspaceId as string
@@ -93,7 +95,7 @@ export function LongInput({
   const overlayRef = useRef<HTMLDivElement>(null)
   const [activeSourceBlockId, setActiveSourceBlockId] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const accessiblePrefixes = useAccessibleReferencePrefixes(blockId)
+  const accessiblePrefixes = useAccessibleReferencePrefixes(parentBlockId || blockId)
 
   // Use preview value when in preview mode, otherwise use store value or prop value
   const baseValue = isPreview ? previewValue : propValue !== undefined ? propValue : storeValue
@@ -473,7 +475,7 @@ export function LongInput({
                   emitTagSelection(newValue)
                 }
               }}
-              blockId={blockId}
+              blockId={parentBlockId || blockId}
               activeSourceBlockId={activeSourceBlockId}
               inputValue={value?.toString() ?? ''}
               cursorPosition={cursorPosition}

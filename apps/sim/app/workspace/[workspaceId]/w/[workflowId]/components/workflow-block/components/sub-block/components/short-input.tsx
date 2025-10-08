@@ -30,6 +30,7 @@ interface ShortInputProps {
   isPreview?: boolean
   previewValue?: string | null
   disabled?: boolean
+  parentBlockId?: string // For tool inputs to access parent block's accessible prefixes
 }
 
 export function ShortInput({
@@ -44,6 +45,7 @@ export function ShortInput({
   isPreview = false,
   previewValue,
   disabled = false,
+  parentBlockId,
 }: ShortInputProps) {
   // Local state for immediate UI updates during streaming
   const [localContent, setLocalContent] = useState<string>('')
@@ -346,7 +348,7 @@ export function ShortInput({
     }
   }
 
-  const accessiblePrefixes = useAccessibleReferencePrefixes(blockId)
+  const accessiblePrefixes = useAccessibleReferencePrefixes(parentBlockId || blockId)
 
   return (
     <>
@@ -462,7 +464,7 @@ export function ShortInput({
             <TagDropdown
               visible={showTags}
               onSelect={handleEnvVarSelect}
-              blockId={blockId}
+              blockId={parentBlockId || blockId}
               activeSourceBlockId={activeSourceBlockId}
               inputValue={value?.toString() ?? ''}
               cursorPosition={cursorPosition}
