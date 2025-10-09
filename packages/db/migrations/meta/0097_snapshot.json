@@ -1,6 +1,6 @@
 {
-  "id": "666921aa-dbff-47d6-b936-0250db17f5d8",
-  "prevId": "948549ea-b245-4392-9de3-39c6706da856",
+  "id": "2deb657f-1de8-42cc-bdb0-252a0378538b",
+  "prevId": "a116a676-ee5a-417c-bea4-dc43296de3bb",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3747,6 +3747,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "copilot_enabled_models": {
+          "name": "copilot_enabled_models",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
         },
         "updated_at": {
           "name": "updated_at",

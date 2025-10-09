@@ -48,25 +48,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         .where(eq(workflowExecutionLogs.executionId, executionId))
         .limit(1)
 
-<<<<<<< HEAD
-      const { traceSpans } = buildTraceSpans(result)
-
-      if (result.success === false) {
-        const message = result.error || 'Workflow execution failed'
-        await loggingSession.safeCompleteWithError({
-          endedAt: new Date().toISOString(),
-          totalDurationMs: result.metadata?.duration || 0,
-          error: { message },
-          traceSpans,
-        })
-      } else {
-        await loggingSession.safeComplete({
-          endedAt: new Date().toISOString(),
-          totalDurationMs: result.metadata?.duration || 0,
-          finalOutput: result.output || {},
-          traceSpans,
-        })
-=======
       // Check if execution is paused (HITL block)
       const isPaused = result.metadata?.isPaused === true
 
@@ -145,7 +126,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             traceSpans,
           })
         }
->>>>>>> fe37dfd8f (HITL v1)
       }
 
       return createSuccessResponse({
