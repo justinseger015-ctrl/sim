@@ -34,6 +34,7 @@ interface WorkflowBlockProps {
   name: string
   isActive?: boolean
   isPending?: boolean
+  isPausedAt?: boolean
   isPreview?: boolean
   subBlockValues?: Record<string, any>
   blockState?: any // Block state data passed in preview mode
@@ -41,11 +42,16 @@ interface WorkflowBlockProps {
 
 // Combine both interfaces into a single component
 export function WorkflowBlock({ id, data }: NodeProps<WorkflowBlockProps>) {
-  const { type, config, name, isActive: dataIsActive, isPending } = data
+  const { type, config, name, isActive: dataIsActive, isPending, isPausedAt } = data
 
   // Debug logging for pending state in preview mode
   if (data.isPreview && isPending !== undefined) {
     logger.debug(`Block ${id} (${name}) isPending:`, isPending)
+  }
+  
+  // Debug logging for paused state in preview mode
+  if (data.isPreview && isPausedAt) {
+    logger.debug(`Block ${id} (${name}) is PAUSED AT THIS BLOCK`)
   }
 
   // State management
@@ -719,6 +725,8 @@ export function WorkflowBlock({ id, data }: NodeProps<WorkflowBlockProps>) {
           displayIsWide ? 'w-[480px]' : 'w-[320px]',
           !isEnabled && 'shadow-sm',
           isActive && 'animate-pulse-ring ring-2 ring-blue-500',
+          // Paused block highlighting (execution paused at this block)
+          isPausedAt && 'ring-2 ring-amber-500',
           // Diff highlighting
           diffStatus === 'new' && 'bg-green-50/50 ring-2 ring-green-500 dark:bg-green-900/10',
           diffStatus === 'edited' && 'bg-orange-50/50 ring-2 ring-orange-500 dark:bg-orange-900/10',

@@ -300,6 +300,8 @@ export async function GET(
     )
     logger.debug(`Trace spans count: ${traceSpans.length}`)
     logger.debug(`Trigger block ID: ${triggerBlockId}`)
+    logger.debug(`Paused block ID from metadata: ${metadata?.blockId}`)
+    logger.debug(`Full metadata structure:`, metadata)
     logger.debug(`Executed blocks from metadata: ${JSON.stringify(metadata?.executedBlocks || [])}`)
 
     return NextResponse.json(response)

@@ -594,10 +594,10 @@ export default function ApprovalPage() {
             style={{ height: `calc(100% - ${approvalSectionHeight}px - 4px)` }}
           >
             <ScrollArea className="h-full">
-              <div className="flex flex-col gap-6 p-6">
+              <div className="flex flex-col gap-6 p-6 min-w-0">
               {/* Trace Spans */}
               {executionData?.traceSpans && executionData.traceSpans.length > 0 ? (
-                <div>
+                <div className="min-w-0">
                   <h3 className="mb-3 text-xs font-semibold text-muted-foreground">
                     EXECUTION TIMELINE
                   </h3>
@@ -610,19 +610,19 @@ export default function ApprovalPage() {
               
               {/* Selected Block Details */}
               {selectedBlockId && executionData?.workflowState?.blocks?.[selectedBlockId] && (
-                <div>
+                <div className="min-w-0">
                   <h3 className="mb-3 text-xs font-semibold text-muted-foreground">
                     BLOCK DETAILS
                   </h3>
-                  <Card className="border">
-                    <div className="p-4 space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-semibold text-sm">
+                  <Card className="border min-w-0">
+                    <div className="p-4 space-y-4 min-w-0">
+                      <div className="flex items-center justify-between min-w-0">
+                        <h4 className="font-semibold text-sm truncate">
                           {executionData.workflowState.blocks[selectedBlockId].name || 
                            executionData.workflowState.blocks[selectedBlockId].metadata?.name || 
                            'Block'}
                         </h4>
-                        <Badge variant="secondary" className="text-xs">
+                        <Badge variant="secondary" className="text-xs flex-shrink-0">
                           {executionData.workflowState.blocks[selectedBlockId].type || 
                            executionData.workflowState.blocks[selectedBlockId].metadata?.id}
                         </Badge>
@@ -639,18 +639,18 @@ export default function ApprovalPage() {
                           return (
                             <>
                               {blockExecution.input && (
-                                <div className="space-y-2">
+                                <div className="space-y-2 min-w-0">
                                   <p className="text-xs font-medium text-muted-foreground">Input</p>
-                                  <pre className="rounded-md bg-muted p-3 text-xs overflow-auto max-h-48">
+                                  <pre className="rounded-md bg-muted p-3 text-xs overflow-x-auto overflow-y-auto max-h-48 w-full break-words whitespace-pre-wrap">
                                     {JSON.stringify(blockExecution.input, null, 2)}
                                   </pre>
                                 </div>
                               )}
                               
                               {blockExecution.output && (
-                                <div className="space-y-2">
+                                <div className="space-y-2 min-w-0">
                                   <p className="text-xs font-medium text-muted-foreground">Output</p>
-                                  <pre className="rounded-md bg-muted p-3 text-xs overflow-auto max-h-48">
+                                  <pre className="rounded-md bg-muted p-3 text-xs overflow-x-auto overflow-y-auto max-h-48 w-full break-words whitespace-pre-wrap">
                                     {JSON.stringify(blockExecution.output, null, 2)}
                                   </pre>
                                 </div>

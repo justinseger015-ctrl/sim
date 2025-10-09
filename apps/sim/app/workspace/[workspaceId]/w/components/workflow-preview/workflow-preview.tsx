@@ -196,9 +196,23 @@ export function WorkflowPreview({
       
       // Determine execution status for styling
       const isExecuted = executedBlockIds.includes(blockId)
-      const isPausedAtBlock = pausedBlockId === blockId
       const isUsedTrigger = triggerBlockId === blockId
       const isTriggerCategory = blockConfig.category === 'triggers'
+      
+      // Check if this is a HITL block that has been executed (meaning execution paused here)
+      const isHITLBlock = block.type === 'user_approval'
+      const isPausedAtBlock = isHITLBlock && isExecuted
+      
+      // Log HITL blocks
+      if (isHITLBlock) {
+        logger.debug(`HITL block found:`, {
+          blockId,
+          blockName: block.name,
+          blockType: block.type,
+          isExecuted,
+          isPausedAtBlock,
+        })
+      }
       
       // Log trigger block logic
       if (isTriggerCategory) {
@@ -221,6 +235,11 @@ export function WorkflowPreview({
       if (isPending) {
         logger.debug(`Block ${blockId} (${block.name}) marked as pending`)
       }
+      
+      // Debug paused block
+      if (isPausedAtBlock) {
+        logger.debug(`Block ${blockId} (${block.name}) is the PAUSED HITL BLOCK`)
+      }
 
       nodeArray.push({
         id: blockId,
@@ -237,9 +256,10 @@ export function WorkflowPreview({
           subBlockValues: subBlocksClone,
           executionStatus: isPausedAtBlock ? 'paused' : isExecuted ? 'executed' : isPending ? 'pending' : undefined,
           isPending: isPending,
+          isPausedAt: isPausedAtBlock,
         },
         className: isPausedAtBlock 
-          ? 'ring-2 ring-amber-500 ring-offset-2 rounded-lg' 
+          ? 'ring-2 ring-amber-500 rounded-lg' 
           : undefined,
       })
 
