@@ -258,9 +258,16 @@ export class PauseResumeService {
 
     logger.info(`Successfully retrieved paused state for execution ${executionId}`)
 
+    // Convert edges back to connections for Executor compatibility
+    const workflowStateRaw = paused.workflowState as any
+    const workflowState = {
+      ...workflowStateRaw,
+      connections: workflowStateRaw.edges || workflowStateRaw.connections || [],
+    }
+
     return {
       executionContext: paused.executionContext,
-      workflowState: paused.workflowState,
+      workflowState: workflowState as any,
       environmentVariables: paused.environmentVariables,
       workflowInput: paused.workflowInput,
       metadata: paused.metadata,
@@ -290,9 +297,16 @@ export class PauseResumeService {
 
     logger.info(`Successfully retrieved paused state for execution ${executionId}`)
 
+    // Convert edges back to connections for Executor compatibility
+    const workflowStateRaw = paused.workflowState as any
+    const workflowState = {
+      ...workflowStateRaw,
+      connections: workflowStateRaw.edges || workflowStateRaw.connections || [],
+    }
+
     return {
       executionContext: paused.executionContext,
-      workflowState: paused.workflowState,
+      workflowState: workflowState as any,
       environmentVariables: paused.environmentVariables,
       workflowInput: paused.workflowInput,
       metadata: paused.metadata,

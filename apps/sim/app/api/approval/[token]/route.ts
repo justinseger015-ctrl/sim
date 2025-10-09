@@ -176,7 +176,14 @@ export async function POST(
 
       // Deserialize the execution context
       const context = deserializeExecutionContext(execution.executionContext)
-      const workflowState = execution.workflowState as any
+      const workflowStateRaw = execution.workflowState as any
+      
+      // Convert edges back to connections for Executor compatibility
+      const workflowState = {
+        ...workflowStateRaw,
+        connections: workflowStateRaw.edges || workflowStateRaw.connections || [],
+      }
+      
       const blockId = (execution.metadata as any)?.blockId
 
       logger.info('Resuming workflow from paused state', {

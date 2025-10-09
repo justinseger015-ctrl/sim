@@ -34,6 +34,10 @@ interface WorkflowPreviewProps {
   defaultZoom?: number
   fitPadding?: number
   onNodeClick?: (blockId: string, mousePosition: { x: number; y: number }) => void
+  executedBlockIds?: string[]
+  pausedBlockId?: string | null
+  isPaused?: boolean
+  triggerBlockId?: string | null
 }
 
 // Define node types - the components now handle preview mode internally
@@ -58,6 +62,10 @@ export function WorkflowPreview({
   defaultZoom = 0.8,
   fitPadding = 0.25,
   onNodeClick,
+  executedBlockIds = [],
+  pausedBlockId = null,
+  isPaused = false,
+  triggerBlockId = null,
 }: WorkflowPreviewProps) {
   // Check if the workflow state is valid
   const isValidWorkflowState = workflowState?.blocks && workflowState.edges
@@ -176,6 +184,27 @@ export function WorkflowPreview({
       }
 
       const subBlocksClone = block.subBlocks ? cloneDeep(block.subBlocks) : {}
+      
+      // Determine execution status for styling
+      const isExecuted = executedBlockIds.includes(blockId)
+      const isPausedAtBlock = pausedBlockId === blockId
+      const isUsedTrigger = triggerBlockId === blockId
+      const isTriggerCategory = blockConfig.category === 'triggers'
+      
+      // Log trigger block logic
+      if (isTriggerCategory) {
+        logger.debug(`Trigger block ${blockId}:`, {
+          blockId,
+          blockName: block.name,
+          isExecuted,
+          isUsedTrigger,
+          triggerBlockId,
+          isPaused,
+        })
+      }
+      
+      // Don't gray out the trigger that was used, executed blocks, or the paused block
+      const isPending = isPaused && !isExecuted && !isPausedAtBlock && !isUsedTrigger
 
       nodeArray.push({
         id: blockId,
@@ -185,12 +214,18 @@ export function WorkflowPreview({
         data: {
           type: block.type,
           config: blockConfig,
-          name: block.name,
+          name: block.name || (block as any).metadata?.name || blockConfig.name,
           blockState: block,
           canEdit: false,
           isPreview: true,
           subBlockValues: subBlocksClone,
+          executionStatus: isPausedAtBlock ? 'paused' : isExecuted ? 'executed' : isPending ? 'pending' : undefined,
         },
+        className: isPausedAtBlock 
+          ? 'ring-2 ring-amber-500 ring-offset-2' 
+          : isPending 
+            ? 'opacity-50' 
+            : undefined,
       })
 
       if (block.type === 'loop') {
@@ -235,6 +270,10 @@ export function WorkflowPreview({
     showSubBlocks,
     workflowState.blocks,
     isValidWorkflowState,
+    executedBlockIds,
+    pausedBlockId,
+    isPaused,
+    triggerBlockId,
   ])
 
   const edges: Edge[] = useMemo(() => {

@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm'
 import { randomUUID } from 'crypto'
 import { createLogger } from '@/lib/logs/console/logger'
 import type { ExecutionContext } from '@/executor/types'
-import { serializeExecutionContext } from './pause-resume-utils'
+import { serializeExecutionContext, serializeWorkflowState } from './pause-resume-utils'
 
 const logger = createLogger('PausedExecutionService')
 
@@ -91,6 +91,8 @@ export class PausedExecutionService {
       userId,
       contextExecutedBlocks: context.executedBlocks instanceof Set ? Array.from(context.executedBlocks) : context.executedBlocks,
       contextActiveExecutionPath: context.activeExecutionPath instanceof Set ? Array.from(context.activeExecutionPath) : context.activeExecutionPath,
+      blockLogsCount: context.blockLogs?.length || 0,
+      blockLogsBlockIds: (context.blockLogs || []).map((log: any) => log.blockId),
     })
 
     // Look up the original trigger type from the execution log
@@ -154,6 +156,74 @@ export class PausedExecutionService {
       }
     }
 
+    // Properly serialize workflow state
+    logger.info('Checking workflow state before serialization', {
+      executionId,
+      hasWorkflow: !!context.workflow,
+      workflowKeys: context.workflow ? Object.keys(context.workflow) : [],
+      hasBlocks: !!(context.workflow as any)?.blocks,
+      blocksCount: Array.isArray((context.workflow as any)?.blocks) ? (context.workflow as any).blocks.length : 0,
+    })
+    
+    let serializedWorkflowState: any = null
+    
+    if (context.workflow) {
+      // Workflow state is available in context (server-side execution)
+      serializedWorkflowState = serializeWorkflowState(context.workflow)
+    } else {
+      // Workflow state not in context (client-side execution) - fetch from database
+      logger.info('Workflow state not in context, fetching from database', {
+        executionId,
+        workflowId,
+      })
+      
+      const { loadWorkflowFromNormalizedTables } = await import('@/lib/workflows/db-helpers')
+      
+      const normalizedData = await loadWorkflowFromNormalizedTables(workflowId)
+      
+      if (!normalizedData) {
+        logger.error('Cannot pause execution: workflow not found in normalized tables', {
+          executionId,
+          workflowId,
+        })
+        throw new Error('Workflow state is required to pause execution')
+      }
+      
+      // Construct workflow state from normalized data
+      const workflowStateFromDb = {
+        blocks: normalizedData.blocks, // Keep as Record/Object
+        edges: normalizedData.edges.map((edge) => ({
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          sourceHandle: edge.sourceHandle,
+          targetHandle: edge.targetHandle,
+        })),
+        loops: normalizedData.loops,
+        parallels: normalizedData.parallels,
+      }
+      
+      serializedWorkflowState = serializeWorkflowState(workflowStateFromDb as any)
+      
+      logger.info('Fetched and serialized workflow state from database', {
+        executionId,
+        workflowId,
+        blocksCount: serializedWorkflowState.blocks ? Object.keys(serializedWorkflowState.blocks).length : 0,
+      })
+    }
+    
+    if (!serializedWorkflowState) {
+      logger.error('Cannot pause execution: workflow state is missing', { executionId })
+      throw new Error('Workflow state is required to pause execution')
+    }
+    
+    logger.info('Serialized workflow state', {
+      executionId,
+      serializedKeys: Object.keys(serializedWorkflowState),
+      hasBlocks: !!serializedWorkflowState.blocks,
+      blocksCount: Array.isArray(serializedWorkflowState.blocks) ? serializedWorkflowState.blocks.length : 0,
+    })
+
     try {
       // Use INSERT ... ON CONFLICT to handle duplicate execution_id atomically
       // If the execution_id already exists, just return without error
@@ -166,7 +236,7 @@ export class PausedExecutionService {
           userId,
           pausedAt,
           executionContext: serializedContext,
-          workflowState: context.workflow || {},
+          workflowState: serializedWorkflowState,
           environmentVariables: context.environmentVariables || {},
           workflowInput: null,
           metadata: {
@@ -174,6 +244,29 @@ export class PausedExecutionService {
             resumeTriggerType: resumeType,
             triggerType, // Save the original trigger type
             pausedAt: pausedAt.toISOString(),
+            // Store block logs for trace spans
+            logs: (context.blockLogs || []).map((log: any, index: number) => {
+              if (index === 0) {
+                logger.debug('First block log (should be trigger):', {
+                  blockId: log.blockId,
+                  blockName: log.blockName,
+                  blockType: log.blockType,
+                })
+              }
+              return log
+            }),
+            duration: context.metadata?.duration || 0,
+            // Store execution state for visualization
+            executedBlocks: Array.isArray(context.executedBlocks) 
+              ? context.executedBlocks 
+              : context.executedBlocks instanceof Set
+                ? Array.from(context.executedBlocks)
+                : [],
+            activeExecutionPath: Array.isArray(context.activeExecutionPath)
+              ? context.activeExecutionPath
+              : context.activeExecutionPath instanceof Set
+                ? Array.from(context.activeExecutionPath)
+                : [],
             // Include parent execution info if this is a child workflow
             ...((context as any).parentExecutionInfo && {
               parentExecutionInfo: (context as any).parentExecutionInfo,

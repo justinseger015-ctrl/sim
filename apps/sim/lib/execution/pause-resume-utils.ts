@@ -78,7 +78,7 @@ export function serializeExecutionContext(context: ExecutionContext): any {
     
     // Streaming context
     stream: context.stream,
-    selectedOutputIds: context.selectedOutputIds,
+    selectedOutputs: context.selectedOutputs,
     edges: context.edges,
   }
 }
@@ -204,7 +204,7 @@ export function deserializeExecutionContext(serialized: any): ExecutionContext {
     activeExecutionPath,
     workflow: serialized.workflow as SerializedWorkflow,
     stream: serialized.stream,
-    selectedOutputIds: serialized.selectedOutputIds,
+    selectedOutputs: serialized.selectedOutputs,
     edges: serialized.edges,
   }
 }
@@ -215,9 +215,11 @@ export function deserializeExecutionContext(serialized: any): ExecutionContext {
 export function serializeWorkflowState(workflow: SerializedWorkflow): any {
   return {
     blocks: workflow.blocks,
-    connections: workflow.connections,
+    edges: workflow.connections.map((conn, index) => ({
+      ...conn,
+      id: (conn as any).id || `${conn.source}-${conn.target}-${index}`,
+    })),  // Use edges for WorkflowPreview compatibility and ensure IDs exist
     loops: workflow.loops,
     parallels: workflow.parallels,
   }
 }
-

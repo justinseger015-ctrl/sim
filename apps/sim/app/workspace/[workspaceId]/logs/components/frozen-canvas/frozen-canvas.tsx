@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { createLogger } from '@/lib/logs/console/logger'
 import { cn, redactApiKeys } from '@/lib/utils'
 import { WorkflowPreview } from '@/app/workspace/[workspaceId]/w/components/workflow-preview/workflow-preview'
@@ -153,11 +154,15 @@ function PinnedLogs({
   blockId,
   workflowState,
   onClose,
+  isPaused,
+  pausedBlockId,
 }: {
   executionData: any | null
   blockId: string
   workflowState: any
   onClose: () => void
+  isPaused?: boolean
+  pausedBlockId?: string | null
 }) {
   // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
   const [currentIterationIndex, setCurrentIterationIndex] = useState(0)
@@ -167,13 +172,15 @@ function PinnedLogs({
     setCurrentIterationIndex(0)
   }, [executionData])
 
-  // Handle case where block has no execution data (e.g., failed workflow)
+  // Handle case where block has no execution data (e.g., paused or failed workflow)
   if (!executionData) {
     const blockInfo = workflowState?.blocks?.[blockId]
+    const isPausedBlock = isPaused && blockId === pausedBlockId
+    
     const formatted = {
       blockName: blockInfo?.name || 'Unknown Block',
       blockType: blockInfo?.type || 'unknown',
-      status: 'not_executed',
+      status: isPausedBlock ? 'paused' : 'not_executed',
       duration: 'N/A',
       input: null,
       output: null,
@@ -198,7 +205,11 @@ function PinnedLogs({
           <div className='flex items-center justify-between'>
             <div className='flex items-center gap-2'>
               <Badge variant='secondary'>{formatted.blockType}</Badge>
-              <Badge variant='outline'>not executed</Badge>
+              {isPausedBlock ? (
+                <Badge variant='default' className='bg-amber-500'>waiting for approval</Badge>
+              ) : (
+                <Badge variant='outline'>pending</Badge>
+              )}
             </div>
           </div>
         </CardHeader>
@@ -206,7 +217,11 @@ function PinnedLogs({
         <CardContent className='space-y-4'>
           <div className='rounded-md bg-muted/50 p-4 text-center'>
             <div className='text-muted-foreground text-sm'>
-              This block was not executed because the workflow failed before reaching it.
+              {isPausedBlock 
+                ? 'This block is waiting for approval to continue execution.'
+                : isPaused 
+                  ? 'This block has not been executed yet. The workflow is paused waiting for approval.'
+                  : 'This block was not executed because the workflow failed before reaching it.'}
             </div>
           </div>
         </CardContent>
@@ -504,12 +519,26 @@ export function FrozenCanvas({
 
         const response = await fetch(`/api/logs/execution/${executionId}`)
         if (!response.ok) {
-          throw new Error(`Failed to fetch frozen canvas data: ${response.statusText}`)
+          // Try to get error details from response body
+          const errorData = await response.json().catch(() => ({}))
+          const errorMsg = errorData.error || errorData.details || response.statusText
+          throw new Error(errorMsg)
         }
 
         const result = await response.json()
         setData(result)
         logger.debug(`Loaded frozen canvas data for execution: ${executionId}`)
+        logger.debug('Frozen canvas data received:', {
+          hasWorkflowState: !!result.workflowState,
+          workflowStateKeys: result.workflowState ? Object.keys(result.workflowState) : [],
+          blocksType: result.workflowState?.blocks ? typeof result.workflowState.blocks : 'undefined',
+          blocksIsArray: Array.isArray(result.workflowState?.blocks),
+          blocksCount: result.workflowState?.blocks ? 
+            (Array.isArray(result.workflowState.blocks) ? 
+              result.workflowState.blocks.length : 
+              Object.keys(result.workflowState.blocks).length) : 0,
+          migrated: result.workflowState?._migrated,
+        })
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Unknown error'
         logger.error('Failed to fetch frozen canvas data:', err)
@@ -552,6 +581,18 @@ export function FrozenCanvas({
     )
   }
 
+  // Log what we're about to render
+  logger.debug('FrozenCanvas render state:', {
+    hasData: !!data,
+    hasWorkflowState: !!data?.workflowState,
+    workflowStateKeys: data?.workflowState ? Object.keys(data.workflowState) : [],
+    migrated: (data.workflowState as any)?._migrated,
+    blocksCount: data?.workflowState?.blocks ? 
+      (Array.isArray((data.workflowState as any).blocks) ? 
+        (data.workflowState as any).blocks.length : 
+        Object.keys((data.workflowState as any).blocks).length) : 0,
+  })
+
   // Check if this is a migrated log without real workflow state
   const isMigratedLog = (data.workflowState as any)?._migrated === true
   if (isMigratedLog) {
@@ -575,8 +616,18 @@ export function FrozenCanvas({
     )
   }
 
+  // Extract executed block IDs from trace spans
+  const executedBlockIds = Object.keys(blockExecutions)
+  
+  logger.debug('Rendering frozen canvas with execution state:', {
+    executedBlockIds,
+    pausedBlockId: (data as any).executionMetadata?.pausedBlockId,
+    isPaused: (data as any).executionMetadata?.isPaused,
+    triggerBlockId: (data as any).executionMetadata?.triggerBlockId,
+  })
+  
   return (
-    <>
+    <TooltipProvider>
       <div style={{ height, width }} className={cn('frozen-canvas-mode h-full w-full', className)}>
         <WorkflowPreview
           workflowState={data.workflowState}
@@ -589,6 +640,10 @@ export function FrozenCanvas({
             // This is important for failed workflows where some blocks never executed
             setPinnedBlockId(blockId)
           }}
+          executedBlockIds={executedBlockIds}
+          pausedBlockId={(data as any).executionMetadata?.pausedBlockId}
+          isPaused={(data as any).executionMetadata?.isPaused}
+          triggerBlockId={(data as any).executionMetadata?.triggerBlockId}
         />
       </div>
 
@@ -598,8 +653,10 @@ export function FrozenCanvas({
           blockId={pinnedBlockId}
           workflowState={data.workflowState}
           onClose={() => setPinnedBlockId(null)}
+          isPaused={(data as any).executionMetadata?.isPaused}
+          pausedBlockId={(data as any).executionMetadata?.pausedBlockId}
         />
       )}
-    </>
+    </TooltipProvider>
   )
 }

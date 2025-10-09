@@ -423,7 +423,7 @@ export class Executor {
                 const processedClientStream = streamingResponseFormatProcessor.processStream(
                   streamForClient,
                   blockId,
-                  context.selectedOutputIds || [],
+                  context.selectedOutputs || [],
                   responseFormat
                 )
 
@@ -1511,6 +1511,58 @@ export class Executor {
       context.activeExecutionPath.add(initBlock.id)
       // Mark the starting block as executed
       context.executedBlocks.add(initBlock.id)
+      
+      // Always create a log for the trigger block (not just when it has files)
+      // Check if a log for this trigger doesn't already exist (avoid duplicates)
+      const existingBlockState = context.blockStates.get(initBlock.id)
+      const hasExistingLog = context.blockLogs.some(log => log.blockId === initBlock.id)
+      
+      if (existingBlockState?.output && !hasExistingLog) {
+        const triggerLog: BlockLog = {
+          blockId: initBlock.id,
+          blockName: initBlock.metadata?.name || initBlock.metadata?.id || 'Trigger',
+          blockType: initBlock.metadata?.id || 'trigger',
+          startedAt: new Date().toISOString(),
+          endedAt: new Date().toISOString(),
+          success: true,
+          input: this.workflowInput,
+          output: existingBlockState.output,
+          durationMs: 0,
+        }
+        context.blockLogs.push(triggerLog)
+        
+        // Add trigger to console immediately (client-side only)
+        if (typeof window !== 'undefined') {
+          try {
+            import('@/stores/panel/console/store').then(({ useConsoleStore }) => {
+              useConsoleStore.getState().addConsole({
+                input: triggerLog.input || {},
+                output: triggerLog.output || {},
+                success: true,
+                error: undefined,
+                durationMs: 0,
+                startedAt: triggerLog.startedAt,
+                endedAt: triggerLog.endedAt,
+                workflowId: context.workflowId,
+                blockId: initBlock.id,
+                executionId: this.contextExtensions.executionId,
+                blockName: triggerLog.blockName,
+                blockType: triggerLog.blockType,
+              })
+            }).catch(err => {
+              logger.error('Failed to add trigger to console', err)
+            })
+          } catch (err) {
+            logger.error('Failed to import console store', err)
+          }
+        }
+        
+        logger.debug('Created trigger block log', {
+          triggerId: initBlock.id,
+          triggerName: triggerLog.blockName,
+          triggerType: triggerLog.blockType,
+        })
+      }
 
       // Add all blocks connected to the starting block to the active execution path
       const connectedToStartBlock = this.actualWorkflow.connections
@@ -1553,6 +1605,13 @@ export class Executor {
 
     for (const block of this.actualWorkflow.blocks) {
       if (executedBlocks.has(block.id) || block.enabled === false) {
+        continue
+      }
+      
+      // Skip trigger blocks that aren't already executed (only starting trigger should execute)
+      const isTriggerBlock = block.metadata?.category === 'triggers' || 
+                             block.config?.params?.triggerMode === true
+      if (isTriggerBlock && !executedBlocks.has(block.id)) {
         continue
       }
 
@@ -1979,15 +2038,36 @@ export class Executor {
     if (incomingConnections.length === 0) {
       return true
     }
+    
+    // Filter out trigger blocks that weren't the starting trigger
+    // Triggers should only provide input when they started the workflow
+    const relevantConnections = incomingConnections.filter((conn) => {
+      const sourceBlock = this.actualWorkflow.blocks.find((b) => b.id === conn.source)
+      const isTriggerBlock = sourceBlock?.metadata?.category === 'triggers' || 
+                             sourceBlock?.config?.params?.triggerMode === true
+      
+      // If it's a trigger block, only include it if it was executed (i.e., it was the starting trigger)
+      if (isTriggerBlock) {
+        return executedBlocks.has(conn.source)
+      }
+      
+      // Non-trigger blocks are always relevant
+      return true
+    })
+    
+    if (relevantConnections.length === 0) {
+      return true
+    }
+    
     // Check if this is a loop block
-    const isLoopBlock = incomingConnections.some((conn) => {
+    const isLoopBlock = relevantConnections.some((conn) => {
       const sourceBlock = this.actualWorkflow.blocks.find((b) => b.id === conn.source)
       return sourceBlock?.metadata?.id === BlockType.LOOP
     })
 
     if (isLoopBlock) {
       // Loop blocks are treated as regular blocks with standard dependency checking
-      return incomingConnections.every((conn) => {
+      return relevantConnections.every((conn) => {
         const sourceExecuted = executedBlocks.has(conn.source)
         const sourceBlockState = context.blockStates.get(conn.source)
         const hasSourceError = sourceBlockState?.output?.error !== undefined
@@ -2012,7 +2092,7 @@ export class Executor {
       })
     }
     // Regular non-loop block handling
-    return incomingConnections.every((conn) => {
+    return relevantConnections.every((conn) => {
       // For virtual blocks inside parallels, check the source appropriately
       let sourceId = conn.source
       if (insideParallel !== undefined && iterationIndex !== undefined) {

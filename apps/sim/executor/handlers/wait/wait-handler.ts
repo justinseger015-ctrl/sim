@@ -806,6 +806,25 @@ export class WaitBlockHandler implements BlockHandler {
           })
 
           try {
+            // Serialize Sets to arrays for JSON transmission
+            const serializedContext = {
+              ...context,
+              executedBlocks: context.executedBlocks instanceof Set 
+                ? Array.from(context.executedBlocks) 
+                : context.executedBlocks,
+              activeExecutionPath: context.activeExecutionPath instanceof Set
+                ? Array.from(context.activeExecutionPath)
+                : context.activeExecutionPath,
+              blockStates: context.blockStates instanceof Map
+                ? Array.from(context.blockStates.entries()).map(([blockId, state]) => ({
+                    blockId,
+                    output: state.output,
+                    executed: state.executed,
+                    executionTime: state.executionTime,
+                  }))
+                : context.blockStates,
+            }
+            
             const response = await fetch('/api/execution/pause', {
               method: 'POST',
               headers: {
@@ -815,7 +834,7 @@ export class WaitBlockHandler implements BlockHandler {
                 workflowId,
                 executionId,
                 blockId: block.id,
-                context,
+                context: serializedContext,
                 pausedAt: new Date(pausedAt).toISOString(),
                 resumeType: 'human',
                 humanOperation: inputs.humanOperation || 'approval',

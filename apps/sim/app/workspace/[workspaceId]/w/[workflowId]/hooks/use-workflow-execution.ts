@@ -723,6 +723,9 @@ export function useWorkflowExecution() {
               ;(result.metadata as any).source = 'chat'
             }
 
+            // Executor already adds logs to console in real-time via addConsole() calls
+            // No need to add them again from result.logs
+            
             // Only persist logs when execution actually completes (not paused)
             persistLogs(executionId, result).catch((err) => {
               logger.error('Error persisting logs:', { error: err })
@@ -944,8 +947,17 @@ export function useWorkflowExecution() {
       let selectedTrigger: any = null
       let selectedBlockId: string | null = null
 
-      // Check for API triggers first (they take precedence over manual triggers)
-      if (apiTriggers.length === 1) {
+      // Priority: Manual > API > Input Form
+      // Check for manual_trigger first (highest priority)
+      const manualTrigger = manualTriggers.find((t) => t.type === 'manual_trigger')
+      if (manualTrigger) {
+        selectedTrigger = manualTrigger
+        const blockEntry = entries.find(([, block]) => block === selectedTrigger)
+        if (blockEntry) {
+          selectedBlockId = blockEntry[0]
+        }
+      } else if (apiTriggers.length === 1) {
+        // Check for API trigger (second priority)
         selectedTrigger = apiTriggers[0]
         const blockEntry = entries.find(([, block]) => block === selectedTrigger)
         if (blockEntry) {
@@ -969,18 +981,15 @@ export function useWorkflowExecution() {
         setIsExecuting(false)
         throw error
       } else if (manualTriggers.length >= 1) {
-        // No API trigger, check for manual triggers
-        // Prefer manual_trigger over input_trigger for simple runs
-        const manualTrigger = manualTriggers.find((t) => t.type === 'manual_trigger')
+        // Check for input_trigger (lowest priority)
         const inputTrigger = manualTriggers.find((t) => t.type === 'input_trigger')
+        if (inputTrigger) {
+          selectedTrigger = inputTrigger
+          const blockEntry = entries.find(([, block]) => block === selectedTrigger)
+          if (blockEntry) {
+            selectedBlockId = blockEntry[0]
 
-        selectedTrigger = manualTrigger || inputTrigger || manualTriggers[0]
-        const blockEntry = entries.find(([, block]) => block === selectedTrigger)
-        if (blockEntry) {
-          selectedBlockId = blockEntry[0]
-
-          // Extract test values from input trigger's inputFormat if it's an input_trigger
-          if (selectedTrigger.type === 'input_trigger') {
+            // Extract test values from input trigger's inputFormat
             const inputFormatValue = selectedTrigger.subBlocks?.inputFormat?.value
             const testInput = extractTestValuesFromInputFormat(inputFormatValue)
 
@@ -989,6 +998,13 @@ export function useWorkflowExecution() {
               finalWorkflowInput = testInput
               logger.info('Using Input trigger test values for manual run:', testInput)
             }
+          }
+        } else {
+          // Fallback to any manual trigger if specific types not found
+          selectedTrigger = manualTriggers[0]
+          const blockEntry = entries.find(([, block]) => block === selectedTrigger)
+          if (blockEntry) {
+            selectedBlockId = blockEntry[0]
           }
         }
       } else {

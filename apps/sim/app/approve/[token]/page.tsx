@@ -33,9 +33,11 @@ interface ApprovalDetails {
 }
 
 interface ExecutionData {
+  executionId: string
+  workflowId: string
+  workflowState: any
   traceSpans?: any[]
   totalDuration?: number
-  workflowState?: any
   executionMetadata?: {
     trigger?: string
     startedAt?: string
@@ -491,21 +493,12 @@ export default function ApprovalPage() {
             </div>
           </div>
           <div className="min-h-0 flex-1 overflow-hidden border-r">
-            {executionData?.workflowState ? (
-              <FrozenCanvas
-                executionId={details!.executionId}
-                traceSpans={executionData.traceSpans}
-                height="100%"
-                width="100%"
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center p-8">
-                <div className="text-center text-muted-foreground">
-                  <Workflow className="mx-auto mb-3 h-12 w-12 opacity-50" />
-                  <p className="text-sm">Workflow state not available</p>
-                </div>
-              </div>
-            )}
+            <FrozenCanvas
+              executionId={details!.executionId}
+              traceSpans={executionData?.traceSpans}
+              height="100%"
+              width="100%"
+            />
           </div>
         </div>
 
