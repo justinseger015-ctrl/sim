@@ -2,17 +2,15 @@
 
 import { useParams, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { CheckCircle2, XCircle, Loader2, AlertCircle, Clock, Workflow, FileText } from 'lucide-react'
-import { getBrandConfig } from '@/lib/branding/branding'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { CheckCircle2, XCircle, Loader2, AlertCircle, Workflow } from 'lucide-react'
 import { FrozenCanvas } from '@/app/workspace/[workspaceId]/logs/components/frozen-canvas/frozen-canvas'
 import { TraceSpansDisplay } from '@/app/workspace/[workspaceId]/logs/components/trace-spans/trace-spans-display'
 import { cn } from '@/lib/utils'
@@ -49,39 +47,17 @@ interface ExecutionData {
 
 // Header component with branding
 function ApprovalHeader({ workflowName }: { workflowName?: string }) {
-  const brand = getBrandConfig()
-  
   return (
-    <div className="sticky top-0 z-10 w-full border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60">
-      <div className="container mx-auto flex h-14 items-center justify-between px-4 sm:px-6 lg:px-8">
+    <div className="sticky top-0 z-10 w-full border-b bg-card">
+      <div className="flex h-12 items-center justify-between px-6">
         <div className="flex items-center gap-3">
-          {brand.logoUrl ? (
-            <Image
-              src={brand.logoUrl}
-              alt={`${brand.name} Logo`}
-              width={32}
-              height={32}
-              className="h-7 w-auto object-contain"
-            />
-          ) : (
-            <Image
-              src="/logo/b&w/text/b&w.svg"
-              alt="Sim - Workflows for LLMs"
-              width={32}
-              height={15.6}
-              className="h-[15.6px] w-auto"
-            />
-          )}
+          <Workflow className="h-5 w-5 text-primary" />
           {workflowName && (
-            <>
-              <div className="h-4 w-px bg-border" />
-              <span className="text-sm font-medium text-foreground">{workflowName}</span>
-            </>
+            <span className="text-sm font-medium text-foreground">{workflowName}</span>
           )}
         </div>
-        <Badge variant="outline" className="gap-1.5">
-          <Workflow className="h-3 w-3" />
-          <span className="text-xs">Workflow Approval</span>
+        <Badge variant="secondary" className="text-xs">
+          Approval Required
         </Badge>
       </div>
     </div>
@@ -111,20 +87,19 @@ function ApprovalControls({
   const isCustomForm = details?.humanOperation === 'custom' && details?.humanInputFormat
 
   return (
-    <div className="sticky bottom-0 z-10 border-t bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60">
-      <div className="container mx-auto px-4 py-4 sm:px-6 lg:px-8">
-        {/* Error Display */}
-        {error && (
-          <div className="mb-4 flex items-start gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-3">
-            <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-destructive" />
-            <p className="text-sm font-medium text-destructive">{error}</p>
-          </div>
-        )}
+    <div className="space-y-4">
+      {/* Error Display */}
+      {error && (
+        <div className="flex items-start gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-3">
+          <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-destructive" />
+          <p className="text-sm font-medium text-destructive">{error}</p>
+        </div>
+      )}
 
-        {isCustomForm ? (
-          // Custom Form Mode
-          <form onSubmit={onSubmit} className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {isCustomForm ? (
+        // Custom Form Mode
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div className="space-y-3">
               {details.humanInputFormat?.map((field) => (
                 <div key={field.id} className="space-y-2">
                   <Label htmlFor={field.name} className="text-sm font-medium">
@@ -132,22 +107,25 @@ function ApprovalControls({
                     {field.required && <span className="ml-1 text-destructive">*</span>}
                   </Label>
                   {field.type === 'boolean' ? (
-                    <div className="flex items-center space-x-3 rounded-md border bg-background p-3">
-                      <Checkbox
-                        id={field.name}
-                        checked={formData[field.name] || false}
-                        onCheckedChange={(checked) =>
-                          setFormData({ ...formData, [field.name]: checked })
-                        }
-                      />
-                      <label htmlFor={field.name} className="text-sm cursor-pointer">
-                        Enable
-                      </label>
-                    </div>
+                    <Select
+                      value={formData[field.name] === undefined ? '' : String(formData[field.name])}
+                      onValueChange={(value) =>
+                        setFormData({ ...formData, [field.name]: value === 'true' })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="true">True</SelectItem>
+                        <SelectItem value="false">False</SelectItem>
+                      </SelectContent>
+                    </Select>
                   ) : field.type === 'number' ? (
                     <Input
                       id={field.name}
                       type="number"
+                      placeholder="number"
                       value={formData[field.name] || ''}
                       onChange={(e) =>
                         setFormData({ ...formData, [field.name]: Number(e.target.value) })
@@ -174,6 +152,7 @@ function ApprovalControls({
                     <Input
                       id={field.name}
                       type="text"
+                      placeholder="text"
                       value={formData[field.name] || ''}
                       onChange={(e) =>
                         setFormData({ ...formData, [field.name]: e.target.value })
@@ -184,36 +163,32 @@ function ApprovalControls({
                 </div>
               ))}
             </div>
-            <div className="flex justify-end gap-3">
-              <Button
-                type="submit"
-                disabled={submitting}
-                size="lg"
-                className="min-w-[140px]"
-              >
-                {submitting ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Submitting...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="mr-2 h-4 w-4" />
-                    Submit
-                  </>
-                )}
-              </Button>
-            </div>
+            <Button
+              type="submit"
+              disabled={submitting}
+              className="w-full"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Submitting...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                  Submit
+                </>
+              )}
+            </Button>
           </form>
         ) : (
           // Approval Mode
-          <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+          <div className="flex gap-3">
             <Button
               onClick={onReject}
               disabled={submitting}
               variant="outline"
-              size="lg"
-              className="min-w-[140px] border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+              className="flex-1 border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
             >
               {submitting ? (
                 <>
@@ -230,8 +205,7 @@ function ApprovalControls({
             <Button
               onClick={onApprove}
               disabled={submitting}
-              size="lg"
-              className="min-w-[140px] bg-green-600 hover:bg-green-700"
+              className="flex-1 bg-green-600 hover:bg-green-700"
             >
               {submitting ? (
                 <>
@@ -247,12 +221,6 @@ function ApprovalControls({
             </Button>
           </div>
         )}
-
-        {/* One-time use notice */}
-        <p className="mt-3 text-center text-xs text-muted-foreground">
-          🔒 This is a one-time use link. Once you make a decision, this link will no longer be valid.
-        </p>
-      </div>
     </div>
   )
 }
@@ -270,6 +238,104 @@ export default function ApprovalPage() {
   const [result, setResult] = useState<'approve' | 'reject' | null>(null)
   const [alreadyUsed, setAlreadyUsed] = useState(false)
   const [formData, setFormData] = useState<Record<string, any>>({})
+  const [rightPanelWidth, setRightPanelWidth] = useState(520)
+  const [isDragging, setIsDragging] = useState(false)
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null)
+  const [approvalSectionHeight, setApprovalSectionHeight] = useState(() => {
+    // Initialize with 60% of viewport height
+    if (typeof window !== 'undefined') {
+      const viewportHeight = window.innerHeight - 48 // Subtract header height
+      return viewportHeight * 0.6
+    }
+    return 400
+  })
+  const [isVerticalDragging, setIsVerticalDragging] = useState(false)
+
+  // Handle horizontal panel resize with RAF for smooth performance
+  useEffect(() => {
+    if (!isDragging) return
+
+    let rafId: number | null = null
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (rafId) return // Skip if already scheduled
+      
+      rafId = requestAnimationFrame(() => {
+        const newWidth = window.innerWidth - e.clientX
+        const minWidth = 320
+        const maxWidth = 800
+        setRightPanelWidth(Math.min(Math.max(newWidth, minWidth), maxWidth))
+        rafId = null
+      })
+    }
+
+    const handleMouseUp = () => {
+      if (rafId) {
+        cancelAnimationFrame(rafId)
+      }
+      setIsDragging(false)
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      if (rafId) {
+        cancelAnimationFrame(rafId)
+      }
+    }
+  }, [isDragging])
+
+  // Handle vertical resize for approval section
+  useEffect(() => {
+    if (!isVerticalDragging) return
+
+    let rafId: number | null = null
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (rafId) return
+      
+      rafId = requestAnimationFrame(() => {
+        const container = document.querySelector('.right-panel-container')
+        if (!container) return
+        
+        const containerRect = container.getBoundingClientRect()
+        const newHeight = containerRect.bottom - e.clientY
+        const minHeight = 200
+        const maxHeight = containerRect.height - 200
+        setApprovalSectionHeight(Math.min(Math.max(newHeight, minHeight), maxHeight))
+        rafId = null
+      })
+    }
+
+    const handleMouseUp = () => {
+      if (rafId) {
+        cancelAnimationFrame(rafId)
+      }
+      setIsVerticalDragging(false)
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+    document.body.style.cursor = 'row-resize'
+    document.body.style.userSelect = 'none'
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      if (rafId) {
+        cancelAnimationFrame(rafId)
+      }
+    }
+  }, [isVerticalDragging])
 
   // Fetch approval details and execution data on mount
   useEffect(() => {
@@ -469,78 +535,47 @@ export default function ApprovalPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex h-screen flex-col bg-background">
       <ApprovalHeader workflowName={details?.workflowName} />
       
       {/* Main Content */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden" style={{ height: 'calc(100vh - 48px)' }}>
         {/* Left Side: Frozen Canvas */}
-        <div className="flex w-full flex-col overflow-hidden lg:w-[60%]">
-          <div className="flex-shrink-0 border-b border-r bg-muted/30 px-6 py-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-semibold text-foreground">Workflow State</h2>
-                <p className="text-xs text-muted-foreground">
-                  Click on blocks to see their input and output data
-                </p>
-              </div>
-              {details?.pausedAt && (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Clock className="h-3.5 w-3.5" />
-                  {new Date(details.pausedAt).toLocaleString()}
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="min-h-0 flex-1 overflow-hidden border-r">
-            <FrozenCanvas
-              executionId={details!.executionId}
-              traceSpans={executionData?.traceSpans}
-              height="100%"
-              width="100%"
-            />
-          </div>
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <FrozenCanvas
+            executionId={details!.executionId}
+            traceSpans={executionData?.traceSpans}
+            height="100%"
+            width="100%"
+            onBlockClick={setSelectedBlockId}
+          />
         </div>
 
-        {/* Right Side: Execution Logs */}
-        <div className="hidden w-[40%] flex-col overflow-hidden lg:flex">
-          <div className="flex-shrink-0 border-b bg-muted/30 px-6 py-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 text-muted-foreground" />
-                <h2 className="text-sm font-semibold text-foreground">Execution Details</h2>
-              </div>
-              {details?.metadata?.description && (
-                <Badge variant="outline" className="text-xs">
-                  {details.humanOperation === 'custom' ? 'Input Required' : 'Approval Required'}
-                </Badge>
-              )}
-            </div>
-          </div>
-          <ScrollArea className="flex-1">
-            <div className="space-y-6 p-6">
-              {/* Workflow Info */}
-              <div className="space-y-3 rounded-lg border bg-card p-4">
-                <div className="space-y-1.5">
-                  <p className="text-xs font-medium text-muted-foreground">Workflow</p>
-                  <p className="text-sm font-medium">{details?.workflowName}</p>
-                </div>
-                <div className="h-px bg-border" />
-                <div className="space-y-1.5">
-                  <p className="text-xs font-medium text-muted-foreground">Execution ID</p>
-                  <p className="font-mono text-xs">{details?.executionId}</p>
-                </div>
-                {details?.metadata?.description && (
-                  <>
-                    <div className="h-px bg-border" />
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-medium text-muted-foreground">Description</p>
-                      <p className="text-sm leading-relaxed">{details.metadata.description}</p>
-                    </div>
-                  </>
-                )}
-              </div>
+        {/* Resize Handle */}
+        <div
+          className={cn(
+            "group relative w-1 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30",
+            isDragging && "bg-primary/50"
+          )}
+          onMouseDown={(e) => {
+            e.preventDefault()
+            setIsDragging(true)
+          }}
+        >
+          <div className="absolute inset-y-0 -left-2 -right-2" />
+        </div>
 
+        {/* Right Side: Execution Details & Controls */}
+        <div 
+          className="right-panel-container flex flex-col overflow-hidden border-l"
+          style={{ width: `${rightPanelWidth}px` }}
+        >
+          <div 
+            className="overflow-hidden"
+            style={{ height: `calc(100% - ${approvalSectionHeight}px - 4px)` }}
+          >
+            <ScrollArea className="h-full">
+              <div className="flex flex-col gap-6 p-6">
               {/* Trace Spans */}
               {executionData?.traceSpans && executionData.traceSpans.length > 0 ? (
                 <div>
@@ -552,28 +587,108 @@ export default function ApprovalPage() {
                     totalDuration={executionData.totalDuration}
                   />
                 </div>
-              ) : (
-                <div className="rounded-lg border border-dashed p-8 text-center">
-                  <FileText className="mx-auto mb-2 h-8 w-8 text-muted-foreground opacity-50" />
-                  <p className="text-sm text-muted-foreground">No execution logs available yet</p>
+              ) : null}
+              
+              {/* Selected Block Details */}
+              {selectedBlockId && executionData?.workflowState?.blocks?.[selectedBlockId] && (
+                <div>
+                  <h3 className="mb-3 text-xs font-semibold text-muted-foreground">
+                    BLOCK DETAILS
+                  </h3>
+                  <Card className="border">
+                    <div className="p-4 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-semibold text-sm">
+                          {executionData.workflowState.blocks[selectedBlockId].name || 
+                           executionData.workflowState.blocks[selectedBlockId].metadata?.name || 
+                           'Block'}
+                        </h4>
+                        <Badge variant="secondary" className="text-xs">
+                          {executionData.workflowState.blocks[selectedBlockId].type || 
+                           executionData.workflowState.blocks[selectedBlockId].metadata?.id}
+                        </Badge>
+                      </div>
+                      
+                      {/* Find execution data for this block */}
+                      {(() => {
+                        const blockExecution = executionData.traceSpans?.find(
+                          (span: any) => span.blockId === selectedBlockId
+                        )
+                        
+                        if (blockExecution) {
+                          return (
+                            <>
+                              {blockExecution.input && (
+                                <div className="space-y-2">
+                                  <p className="text-xs font-medium text-muted-foreground">Input</p>
+                                  <pre className="rounded-md bg-muted p-3 text-xs overflow-auto max-h-48">
+                                    {JSON.stringify(blockExecution.input, null, 2)}
+                                  </pre>
+                                </div>
+                              )}
+                              
+                              {blockExecution.output && (
+                                <div className="space-y-2">
+                                  <p className="text-xs font-medium text-muted-foreground">Output</p>
+                                  <pre className="rounded-md bg-muted p-3 text-xs overflow-auto max-h-48">
+                                    {JSON.stringify(blockExecution.output, null, 2)}
+                                  </pre>
+                                </div>
+                              )}
+                            </>
+                          )
+                        }
+                        
+                        return (
+                          <p className="text-sm text-muted-foreground text-center py-4">
+                            This block has not been executed yet
+                          </p>
+                        )
+                      })()}
+                    </div>
+                  </Card>
                 </div>
               )}
-            </div>
-          </ScrollArea>
+              </div>
+            </ScrollArea>
+          </div>
+          
+          {/* Vertical Resize Handle */}
+          <div
+            className={cn(
+              "group relative h-1 cursor-row-resize bg-transparent transition-colors hover:bg-primary/30",
+              isVerticalDragging && "bg-primary/50"
+            )}
+            onMouseDown={(e) => {
+              e.preventDefault()
+              setIsVerticalDragging(true)
+            }}
+          >
+            <div className="absolute inset-x-0 -top-2 -bottom-2" />
+          </div>
+          
+          {/* Approval Controls - Resizable section at bottom of right panel */}
+          <div 
+            className="border-t bg-card overflow-hidden"
+            style={{ height: `${approvalSectionHeight}px` }}
+          >
+            <ScrollArea className="h-full">
+              <div className="p-6">
+                <ApprovalControls
+                  details={details!}
+                  submitting={submitting}
+                  error={error}
+                  formData={formData}
+                  setFormData={setFormData}
+                  onSubmit={handleCustomSubmit}
+                  onApprove={() => handleAction('approve')}
+                  onReject={() => handleAction('reject')}
+                />
+              </div>
+            </ScrollArea>
+          </div>
         </div>
       </div>
-
-      {/* Bottom: Approval Controls */}
-      <ApprovalControls
-        details={details!}
-        submitting={submitting}
-        error={error}
-        formData={formData}
-        setFormData={setFormData}
-        onSubmit={handleCustomSubmit}
-        onApprove={() => handleAction('approve')}
-        onReject={() => handleAction('reject')}
-      />
     </div>
   )
 }

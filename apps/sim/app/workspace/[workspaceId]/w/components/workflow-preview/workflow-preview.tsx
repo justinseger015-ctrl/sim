@@ -222,7 +222,7 @@ export function WorkflowPreview({
           executionStatus: isPausedAtBlock ? 'paused' : isExecuted ? 'executed' : isPending ? 'pending' : undefined,
         },
         className: isPausedAtBlock 
-          ? 'ring-2 ring-amber-500 ring-offset-2' 
+          ? 'ring-2 ring-amber-500 ring-offset-2 rounded-lg' 
           : isPending 
             ? 'opacity-50' 
             : undefined,

@@ -390,6 +390,7 @@ interface FrozenCanvasProps {
   className?: string
   height?: string | number
   width?: string | number
+  onBlockClick?: (blockId: string) => void
 }
 
 export function FrozenCanvas({
@@ -398,6 +399,7 @@ export function FrozenCanvas({
   className,
   height = '100%',
   width = '100%',
+  onBlockClick,
 }: FrozenCanvasProps) {
   const [data, setData] = useState<FrozenCanvasData | null>(null)
   const [blockExecutions, setBlockExecutions] = useState<Record<string, any>>({})
@@ -636,9 +638,13 @@ export function FrozenCanvas({
           defaultZoom={0.8}
           fitPadding={0.25}
           onNodeClick={(blockId) => {
-            // Always allow clicking blocks, even if they don't have execution data
-            // This is important for failed workflows where some blocks never executed
-            setPinnedBlockId(blockId)
+            // If external handler provided, use it (for approval page)
+            if (onBlockClick) {
+              onBlockClick(blockId)
+            } else {
+              // Otherwise use internal pinned logs (for logs page)
+              setPinnedBlockId(blockId)
+            }
           }}
           executedBlockIds={executedBlockIds}
           pausedBlockId={(data as any).executionMetadata?.pausedBlockId}
@@ -647,7 +653,8 @@ export function FrozenCanvas({
         />
       </div>
 
-      {pinnedBlockId && (
+      {/* Only show pinned logs popup if no external handler */}
+      {!onBlockClick && pinnedBlockId && (
         <PinnedLogs
           executionData={blockExecutions[pinnedBlockId] || null}
           blockId={pinnedBlockId}
