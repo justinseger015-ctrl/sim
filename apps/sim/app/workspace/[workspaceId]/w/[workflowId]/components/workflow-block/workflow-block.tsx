@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen, Code, Info, RectangleHorizontal, RectangleVertical, Zap } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import { Handle, type NodeProps, Position, useUpdateNodeInternals } from 'reactflow'
@@ -93,55 +93,11 @@ export function WorkflowBlock({ id, data }: NodeProps<WorkflowBlockProps>) {
     ? diffAnalysisForFields?.field_diffs?.[id]
     : undefined
 
-  // Debug: Log diff status for this block
-  useEffect(() => {
-    if (currentWorkflow.isDiffMode) {
-      console.log(`[WorkflowBlock ${id}] Diff status:`, {
-        blockId: id,
-        blockName: currentBlock?.name,
-        isDiffMode: currentWorkflow.isDiffMode,
-        diffStatus,
-        hasFieldDiff: !!fieldDiff,
-        timestamp: Date.now(),
-      })
-    }
-  }, [id, currentWorkflow.isDiffMode, diffStatus, fieldDiff, currentBlock?.name])
-
   // Check if this block is marked for deletion (in original workflow, not diff)
   const diffAnalysis = useWorkflowDiffStore((state) => state.diffAnalysis)
   const isShowingDiff = useWorkflowDiffStore((state) => state.isShowingDiff)
   const isDeletedBlock = !isShowingDiff && diffAnalysis?.deleted_blocks?.includes(id)
 
-  // Debug: Log when in diff mode or when blocks are marked for deletion
-  useEffect(() => {
-    if (currentWorkflow.isDiffMode) {
-      console.log(
-        `[WorkflowBlock ${id}] Diff mode active, block exists: ${!!currentBlock}, diff status: ${diffStatus}`
-      )
-      if (fieldDiff) {
-        console.log(`[WorkflowBlock ${id}] Field diff:`, fieldDiff)
-      }
-    }
-    if (diffAnalysis && !isShowingDiff) {
-      console.log(`[WorkflowBlock ${id}] Diff analysis available in original workflow:`, {
-        deleted_blocks: diffAnalysis.deleted_blocks,
-        isDeletedBlock,
-        isShowingDiff,
-      })
-    }
-    if (isDeletedBlock) {
-      console.log(`[WorkflowBlock ${id}] Block marked for deletion in original workflow`)
-    }
-  }, [
-    currentWorkflow.isDiffMode,
-    currentBlock,
-    diffStatus,
-    fieldDiff || null,
-    isDeletedBlock,
-    diffAnalysis,
-    isShowingDiff,
-    id,
-  ])
   // Always call hooks to maintain consistent hook order
   const storeHorizontalHandles = useWorkflowStore(
     (state) => state.blocks[id]?.horizontalHandles ?? true
@@ -175,14 +131,10 @@ export function WorkflowBlock({ id, data }: NodeProps<WorkflowBlockProps>) {
 
   // Get per-block webhook status by checking if webhook is configured
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
-
-  const hasWebhookProvider = useSubBlockStore(
-    (state) => state.workflowValues[activeWorkflowId || '']?.[id]?.webhookProvider
+  const webhookValues = useSubBlockStore(
+    (state) => state.workflowValues[activeWorkflowId || '']?.[id]
   )
-  const hasWebhookPath = useSubBlockStore(
-    (state) => state.workflowValues[activeWorkflowId || '']?.[id]?.webhookPath
-  )
-  const blockWebhookStatus = !!(hasWebhookProvider && hasWebhookPath)
+  const blockWebhookStatus = Boolean(webhookValues?.webhookProvider && webhookValues?.webhookPath)
 
   const blockAdvancedMode = currentWorkflow.isDiffMode
     ? (currentWorkflow.blocks[id]?.advancedMode ?? false)
@@ -204,8 +156,7 @@ export function WorkflowBlock({ id, data }: NodeProps<WorkflowBlockProps>) {
       setDiffAdvancedMode(blockAdvancedMode)
       setDiffTriggerMode(blockTriggerMode)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentWorkflow.isDiffMode, id])
+  }, [currentWorkflow.isDiffMode, blockAdvancedMode, blockTriggerMode, isWide])
 
   const displayIsWide = currentWorkflow.isDiffMode ? diffIsWide : isWide
   const displayAdvancedMode = currentWorkflow.isDiffMode
@@ -218,6 +169,17 @@ export function WorkflowBlock({ id, data }: NodeProps<WorkflowBlockProps>) {
     : data.isPreview
       ? (data.blockState?.triggerMode ?? false)
       : blockTriggerMode
+
+  const mergedSubblocks = useMemo(() => {
+    if (data.isPreview || currentWorkflow.isDiffMode) {
+      return {}
+    }
+
+    const blocks = useWorkflowStore.getState().blocks
+    const activeId = useWorkflowRegistry.getState().activeWorkflowId || undefined
+    const mergedState = mergeSubblockState(blocks, activeId, id)[id]
+    return mergedState?.subBlocks || {}
+  }, [data.isPreview, currentWorkflow.isDiffMode, id, lastUpdate])
 
   // Collaborative workflow actions
   const {
@@ -458,74 +420,50 @@ export function WorkflowBlock({ id, data }: NodeProps<WorkflowBlockProps>) {
     }
   }, [id, blockHeight, blockWidth, updateBlockLayoutMetrics, updateNodeInternals, lastUpdate])
 
-  // SubBlock layout management
-  function groupSubBlocks(subBlocks: SubBlockConfig[], blockId: string) {
+  const subBlockRows = useMemo(() => {
     const rows: SubBlockConfig[][] = []
     let currentRow: SubBlockConfig[] = []
     let currentRowWidth = 0
 
-    // Get the appropriate state for conditional evaluation
     let stateToUse: Record<string, any> = {}
 
     if (data.isPreview && data.subBlockValues) {
-      // In preview mode, use the preview values
       stateToUse = data.subBlockValues
     } else if (currentWorkflow.isDiffMode && currentBlock) {
-      // In diff mode, use the diff workflow's subblock values
       stateToUse = currentBlock.subBlocks || {}
     } else {
-      // In normal mode, use merged state
-      const blocks = useWorkflowStore.getState().blocks
-      const activeWorkflowId = useWorkflowRegistry.getState().activeWorkflowId || undefined
-      const mergedState = mergeSubblockState(blocks, activeWorkflowId, blockId)[blockId]
-      stateToUse = mergedState?.subBlocks || {}
+      stateToUse = mergedSubblocks
     }
 
     const effectiveAdvanced = displayAdvancedMode
     const effectiveTrigger = displayTriggerMode
     const e2bClientEnabled = isTruthy(getEnv('NEXT_PUBLIC_E2B_ENABLED'))
 
-    // Filter visible blocks and those that meet their conditions
-    const visibleSubBlocks = subBlocks.filter((block) => {
+    const visibleSubBlocks = config.subBlocks.filter((block) => {
       if (block.hidden) return false
-
-      // Filter out E2B-related blocks if E2B is not enabled on the client
       if (!e2bClientEnabled && (block.id === 'remoteExecution' || block.id === 'language')) {
         return false
       }
-
-      // Special handling for trigger mode
       if (block.type === ('trigger-config' as SubBlockType)) {
-        // Show trigger-config blocks when in trigger mode OR for pure trigger blocks
         const isPureTriggerBlock = config?.triggers?.enabled && config.category === 'triggers'
         return effectiveTrigger || isPureTriggerBlock
       }
-
       if (effectiveTrigger && block.type !== ('trigger-config' as SubBlockType)) {
-        // In trigger mode, hide all non-trigger-config blocks
         return false
       }
-
-      // Filter by mode if specified
       if (block.mode) {
         if (block.mode === 'basic' && effectiveAdvanced) return false
         if (block.mode === 'advanced' && !effectiveAdvanced) return false
       }
-
-      // If there's no condition, the block should be shown
       if (!block.condition) return true
 
-      // If condition is a function, call it to get the actual condition object
       const actualCondition =
         typeof block.condition === 'function' ? block.condition() : block.condition
-
-      // Get the values of the fields this block depends on from the appropriate state
       const fieldValue = stateToUse[actualCondition.field]?.value
       const andFieldValue = actualCondition.and
         ? stateToUse[actualCondition.and.field]?.value
         : undefined
 
-      // Check if the condition value is an array
       const isValueMatch = Array.isArray(actualCondition.value)
         ? fieldValue != null &&
           (actualCondition.not
@@ -535,7 +473,6 @@ export function WorkflowBlock({ id, data }: NodeProps<WorkflowBlockProps>) {
           ? fieldValue !== actualCondition.value
           : fieldValue === actualCondition.value
 
-      // Check both conditions if 'and' is present
       const isAndValueMatch =
         !actualCondition.and ||
         (Array.isArray(actualCondition.and.value)
@@ -551,16 +488,16 @@ export function WorkflowBlock({ id, data }: NodeProps<WorkflowBlockProps>) {
     })
 
     visibleSubBlocks.forEach((block) => {
-      const blockWidth = block.layout === 'half' ? 0.5 : 1
-      if (currentRowWidth + blockWidth > 1) {
+      const width = block.layout === 'half' ? 0.5 : 1
+      if (currentRowWidth + width > 1) {
         if (currentRow.length > 0) {
           rows.push([...currentRow])
         }
         currentRow = [block]
-        currentRowWidth = blockWidth
+        currentRowWidth = width
       } else {
         currentRow.push(block)
-        currentRowWidth += blockWidth
+        currentRowWidth += width
       }
     })
 
@@ -569,9 +506,19 @@ export function WorkflowBlock({ id, data }: NodeProps<WorkflowBlockProps>) {
     }
 
     return rows
-  }
-
-  const subBlockRows = groupSubBlocks(config.subBlocks, id)
+  }, [
+    config.subBlocks,
+    config.triggers?.enabled,
+    config.category,
+    data.isPreview,
+    data.subBlockValues,
+    currentWorkflow.isDiffMode,
+    currentBlock,
+    displayAdvancedMode,
+    displayTriggerMode,
+    id,
+    mergedSubblocks,
+  ])
 
   // Name editing handlers
   const handleNameClick = (e: React.MouseEvent) => {

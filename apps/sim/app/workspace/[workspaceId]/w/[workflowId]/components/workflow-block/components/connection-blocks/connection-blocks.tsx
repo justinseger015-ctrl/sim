@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { RepeatIcon, SplitIcon } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
@@ -20,11 +21,11 @@ interface ResponseField {
   description?: string
 }
 
-export function ConnectionBlocks({
+function ConnectionBlocksComponent({
   blockId,
-  horizontalHandles,
   setIsConnecting,
-  isDisabled = false,
+  isDisabled,
+  horizontalHandles,
 }: ConnectionBlocksProps) {
   const { incomingConnections, hasIncomingConnections } = useBlockConnections(blockId)
 
@@ -138,3 +139,5 @@ export function ConnectionBlocks({
 
   return <div className={containerClasses}>{connectionCards}</div>
 }
+
+export const ConnectionBlocks = memo(ConnectionBlocksComponent)

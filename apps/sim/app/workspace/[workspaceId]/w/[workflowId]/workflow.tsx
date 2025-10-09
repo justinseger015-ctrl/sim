@@ -1,12 +1,13 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import ReactFlow, {
   Background,
   ConnectionLineType,
   type Edge,
   type EdgeTypes,
+  type Node,
   type NodeTypes,
   ReactFlowProvider,
   useReactFlow,
@@ -49,6 +50,7 @@ import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 import { hasWorkflowsInitiallyLoaded, useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { getUniqueBlockName } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
+import type { BlockState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('Workflow')
 
@@ -268,6 +270,154 @@ const WorkflowContent = React.memo(() => {
     setNestedSubflowErrors(errors)
     return errors.size === 0
   }, [blocks])
+
+  type ContainerMetadata = {
+    id: string
+    type: string
+    depth: number
+    rect: { left: number; right: number; top: number; bottom: number }
+    size: number
+    element: HTMLElement | null
+    ancestors: string[]
+    subflowKind: string | null
+  }
+
+  type DragCache = {
+    containers: ContainerMetadata[]
+    containersById: Map<string, ContainerMetadata>
+    nodeIndex: Map<string, Node>
+    parentMap: Map<string, string | null>
+  }
+
+  // Cache expensive data for the duration of a drag interaction
+  const dragCacheRef = useRef<DragCache | null>(null)
+  const highlightedContainerRef = useRef<string | null>(null)
+
+  const computeAncestors = useCallback((nodeId: string, parentMap: Map<string, string | null>) => {
+    const chain: string[] = []
+    let current = parentMap.get(nodeId) ?? null
+    while (current) {
+      chain.push(current)
+      current = parentMap.get(current) ?? null
+    }
+    return chain
+  }, [])
+
+  const computeDepth = useCallback(
+    (nodeId: string, parentMap: Map<string, string | null>): number =>
+      computeAncestors(nodeId, parentMap).length,
+    [computeAncestors]
+  )
+
+  const getAbsolutePosition = useCallback(
+    (nodeId: string, nodeIndex: Map<string, Node>, parentMap: Map<string, string | null>) => {
+      let currentId: string | null = nodeId
+      let x = 0
+      let y = 0
+
+      while (currentId) {
+        const node = nodeIndex.get(currentId)
+        if (!node) break
+        x += node.position.x
+        y += node.position.y
+        currentId = parentMap.get(currentId) ?? null
+      }
+
+      return { x, y }
+    },
+    []
+  )
+
+  const isContainerNode = (node: Node, block?: BlockState) => {
+    if (node.type === 'subflowNode') return true
+    const blockType = block?.type
+    return blockType === 'loop' || blockType === 'parallel'
+  }
+
+  const getContainerDimensions = (block?: BlockState) => {
+    const width = block?.data?.width && Number.isFinite(block.data.width) ? block.data.width : 500
+    const height =
+      block?.data?.height && Number.isFinite(block.data.height) ? block.data.height : 300
+    return { width, height }
+  }
+
+  const getNodeDragDimensions = (node: Node, block?: BlockState) => {
+    if (node.type === 'subflowNode') {
+      return getContainerDimensions(block)
+    }
+
+    if (node.type === 'condition') {
+      return { width: 250, height: 150 }
+    }
+
+    const width = block?.isWide ? 450 : (block?.data?.width ?? 350)
+    const height = Math.max(block?.height ?? block?.data?.height ?? 100, 100)
+    return { width, height }
+  }
+
+  const ensureContainerElement = (metadata: ContainerMetadata): HTMLElement | null => {
+    if (metadata.element && metadata.element.isConnected) {
+      return metadata.element
+    }
+    const element = document.querySelector(`[data-id="${metadata.id}"]`) as HTMLElement | null
+    metadata.element = element
+    return element
+  }
+
+  const buildDragCache = useCallback((): DragCache => {
+    const nodes = getNodes()
+    const nodeIndex = new Map<string, Node>()
+    const parentMap = new Map<string, string | null>()
+
+    nodes.forEach((n) => {
+      nodeIndex.set(n.id, n)
+      const explicitParent = n.parentId ?? null
+      const blockParent = blocks[n.id]?.data?.parentId ?? null
+      parentMap.set(n.id, explicitParent ?? blockParent)
+    })
+
+    const containers: ContainerMetadata[] = []
+    const containersById = new Map<string, ContainerMetadata>()
+
+    nodes.forEach((node) => {
+      const block = blocks[node.id]
+      if (!isContainerNode(node, block)) {
+        return
+      }
+
+      const { width, height } = getContainerDimensions(block)
+      const absolute = getAbsolutePosition(node.id, nodeIndex, parentMap)
+      const ancestors = computeAncestors(node.id, parentMap)
+      const metadata: ContainerMetadata = {
+        id: node.id,
+        type: block?.type ?? node.type,
+        depth: computeDepth(node.id, parentMap),
+        rect: {
+          left: absolute.x,
+          right: absolute.x + width,
+          top: absolute.y,
+          bottom: absolute.y + height,
+        },
+        size: width * height,
+        element: document.querySelector(`[data-id="${node.id}"]`) as HTMLElement | null,
+        ancestors,
+        subflowKind:
+          (node.data as any)?.kind ??
+          (block?.data as any)?.kind ??
+          (block?.type === 'loop' ? 'loop' : block?.type === 'parallel' ? 'parallel' : null),
+      }
+
+      containers.push(metadata)
+      containersById.set(node.id, metadata)
+    })
+
+    return {
+      containers,
+      containersById,
+      nodeIndex,
+      parentMap,
+    }
+  }, [blocks, computeAncestors, computeDepth, getAbsolutePosition, getNodes])
 
   // Log permissions when they load
   useEffect(() => {
@@ -1190,19 +1340,19 @@ const WorkflowContent = React.memo(() => {
 
   // Transform blocks and loops into ReactFlow nodes
   const nodes = useMemo(() => {
-    const nodeArray: any[] = []
+    const activeIds = new Set(activeBlockIds)
+    const pendingIds = new Set(pendingBlocks)
 
-    // Add block nodes
-    Object.entries(blocks).forEach(([blockId, block]) => {
+    return Object.entries(blocks).reduce<any[]>((acc, [blockId, block]) => {
       if (!block.type || !block.name) {
         logger.warn(`Skipping invalid block: ${blockId}`, { block })
-        return
+        return acc
       }
 
       // Handle container nodes differently
       if (block.type === 'loop' || block.type === 'parallel') {
         const hasNestedError = nestedSubflowErrors.has(block.id)
-        nodeArray.push({
+        acc.push({
           id: block.id,
           type: 'subflowNode',
           position: block.position,
@@ -1217,7 +1367,7 @@ const WorkflowContent = React.memo(() => {
             kind: block.type === 'loop' ? 'loop' : 'parallel',
           },
         })
-        return
+        return acc
       }
 
       const blockConfig = getBlock(block.type)
@@ -1225,15 +1375,14 @@ const WorkflowContent = React.memo(() => {
         logger.error(`No configuration found for block type: ${block.type}`, {
           block,
         })
-        return
+        return acc
       }
 
       const position = block.position
+      const isActive = activeIds.has(block.id)
+      const isPending = isDebugModeEnabled && pendingIds.has(block.id)
 
-      const isActive = activeBlockIds.has(block.id)
-      const isPending = isDebugModeEnabled && pendingBlocks.includes(block.id)
-
-      nodeArray.push({
+      acc.push({
         id: block.id,
         type: 'workflowBlock',
         position,
@@ -1251,9 +1400,8 @@ const WorkflowContent = React.memo(() => {
         width: block.isWide ? 450 : 350, // Standard width based on isWide state
         height: Math.max(block.height || 100, 100), // Use actual height with minimum
       })
-    })
-
-    return nodeArray
+      return acc
+    }, [])
   }, [blocks, activeBlockIds, pendingBlocks, isDebugModeEnabled, nestedSubflowErrors])
 
   // Update nodes - use store version to avoid collaborative feedback loops
@@ -1417,166 +1565,143 @@ const WorkflowContent = React.memo(() => {
 
   // Handle node drag to detect intersections with container nodes
   const onNodeDrag = useCallback(
-    (_event: React.MouseEvent, node: any) => {
-      // Store currently dragged node ID
+    (_event: React.MouseEvent, node: Node) => {
+      const cache = dragCacheRef.current ?? buildDragCache()
+      dragCacheRef.current = cache
+
       setDraggedNodeId(node.id)
 
-      // Emit collaborative position update during drag for smooth real-time movement
       collaborativeUpdateBlockPosition(node.id, node.position, false)
 
-      // Get the current parent ID of the node being dragged
-      const currentParentId = blocks[node.id]?.data?.parentId || null
+      const currentParentId = blocks[node.id]?.data?.parentId ?? null
 
-      // Check if this is a starter block - starter blocks should never be in containers
       const isStarterBlock = node.data?.type === 'starter'
       if (isStarterBlock) {
-        // If it's a starter block, remove any highlighting and don't allow it to be dragged into containers
         if (potentialParentId) {
-          const prevElement = document.querySelector(`[data-id="${potentialParentId}"]`)
-          if (prevElement) {
-            prevElement.classList.remove('loop-node-drag-over', 'parallel-node-drag-over')
+          const previousMetadata = cache.containersById.get(potentialParentId)
+          const previousElement = previousMetadata ? ensureContainerElement(previousMetadata) : null
+          if (previousElement) {
+            previousElement.classList.remove('loop-node-drag-over', 'parallel-node-drag-over')
           }
           setPotentialParentId(null)
+          highlightedContainerRef.current = null
           document.body.style.cursor = ''
         }
-        return // Exit early - don't process any container intersections for starter blocks
+        return
       }
 
-      // Get the node's absolute position to properly calculate intersections
-      const nodeAbsolutePos = getNodeAbsolutePositionWrapper(node.id)
+      const nodeAbsolutePos = getAbsolutePosition(node.id, cache.nodeIndex, cache.parentMap)
 
-      // Find intersections with container nodes using absolute coordinates
-      const intersectingNodes = getNodes()
-        .filter((n) => {
-          // Only consider container nodes that aren't the dragged node
-          if (n.type !== 'subflowNode' || n.id === node.id) return false
+      const block = blocks[node.id]
+      const { width: nodeWidth, height: nodeHeight } = getNodeDragDimensions(node, block)
 
-          // Skip if this container is already the parent of the node being dragged
-          if (n.id === currentParentId) return false
+      const nodeRect = {
+        left: nodeAbsolutePos.x,
+        right: nodeAbsolutePos.x + nodeWidth,
+        top: nodeAbsolutePos.y,
+        bottom: nodeAbsolutePos.y + nodeHeight,
+      }
 
-          // Skip self-nesting: prevent a container from becoming its own descendant
-          if (node.type === 'subflowNode') {
-            // Get the full hierarchy of the potential parent
-            const hierarchy = getNodeHierarchyWrapper(n.id)
+      const ancestorsOfDragged = cache.parentMap.get(node.id)
+        ? computeAncestors(node.id, cache.parentMap)
+        : []
 
-            // If the dragged node is in the hierarchy, this would create a circular reference
-            if (hierarchy.includes(node.id)) {
-              return false // Avoid circular nesting
+      let bestContainer: ContainerMetadata | null = null
+
+      for (const metadata of cache.containers) {
+        if (metadata.id === node.id) continue
+
+        if (metadata.id === currentParentId) continue
+
+        if (metadata.ancestors.includes(node.id)) {
+          continue
+        }
+
+        if (ancestorsOfDragged.includes(metadata.id)) {
+          continue
+        }
+
+        const rect = metadata.rect
+        const intersects =
+          nodeRect.left < rect.right &&
+          nodeRect.right > rect.left &&
+          nodeRect.top < rect.bottom &&
+          nodeRect.bottom > rect.top
+
+        if (!intersects) {
+          continue
+        }
+
+        if (!bestContainer) {
+          bestContainer = metadata
+          continue
+        }
+
+        if (metadata.depth !== bestContainer.depth) {
+          if (metadata.depth > bestContainer.depth) {
+            bestContainer = metadata
+          }
+          continue
+        }
+
+        if (metadata.size < bestContainer.size) {
+          bestContainer = metadata
+        }
+      }
+
+      if (bestContainer) {
+        if (highlightedContainerRef.current !== bestContainer.id) {
+          if (highlightedContainerRef.current) {
+            const previousMetadata = cache.containersById.get(highlightedContainerRef.current)
+            const previousElement = previousMetadata
+              ? ensureContainerElement(previousMetadata)
+              : null
+            if (previousElement) {
+              previousElement.classList.remove('loop-node-drag-over', 'parallel-node-drag-over')
             }
           }
 
-          // Get the container's absolute position
-          const containerAbsolutePos = getNodeAbsolutePositionWrapper(n.id)
-
-          // Get dimensions based on node type
-          const nodeWidth =
-            node.type === 'subflowNode'
-              ? node.data?.width || 500
-              : node.type === 'condition'
-                ? 250
-                : 350
-
-          const nodeHeight =
-            node.type === 'subflowNode'
-              ? node.data?.height || 300
-              : node.type === 'condition'
-                ? 150
-                : 100
-
-          // Check intersection using absolute coordinates
-          const nodeRect = {
-            left: nodeAbsolutePos.x,
-            right: nodeAbsolutePos.x + nodeWidth,
-            top: nodeAbsolutePos.y,
-            bottom: nodeAbsolutePos.y + nodeHeight,
+          highlightedContainerRef.current = bestContainer.id
+          const element = ensureContainerElement(bestContainer)
+          if (element) {
+            if (bestContainer.subflowKind === 'loop') {
+              element.classList.add('loop-node-drag-over')
+            } else if (bestContainer.subflowKind === 'parallel') {
+              element.classList.add('parallel-node-drag-over')
+            }
           }
-
-          const containerRect = {
-            left: containerAbsolutePos.x,
-            right: containerAbsolutePos.x + (n.data?.width || 500),
-            top: containerAbsolutePos.y,
-            bottom: containerAbsolutePos.y + (n.data?.height || 300),
-          }
-
-          // Check intersection with absolute coordinates for accurate detection
-          return (
-            nodeRect.left < containerRect.right &&
-            nodeRect.right > containerRect.left &&
-            nodeRect.top < containerRect.bottom &&
-            nodeRect.bottom > containerRect.top
-          )
-        })
-        // Add more information for sorting
-        .map((n) => ({
-          container: n,
-          depth: getNodeDepthWrapper(n.id),
-          // Calculate size for secondary sorting
-          size: (n.data?.width || 500) * (n.data?.height || 300),
-        }))
-
-      // Update potential parent if there's at least one intersecting container node
-      if (intersectingNodes.length > 0) {
-        // Sort by depth first (deepest/most nested containers first), then by size if same depth
-        const sortedContainers = intersectingNodes.sort((a, b) => {
-          // First try to compare by hierarchy depth
-          if (a.depth !== b.depth) {
-            return b.depth - a.depth // Higher depth (more nested) comes first
-          }
-          // If same depth, use size as secondary criterion
-          return a.size - b.size // Smaller container takes precedence
-        })
-
-        // Use the most appropriate container (deepest or smallest at same depth)
-        const bestContainerMatch = sortedContainers[0]
-
-        // Add a check to see if the bestContainerMatch is a part of the hierarchy of the node being dragged
-        const hierarchy = getNodeHierarchyWrapper(node.id)
-        if (hierarchy.includes(bestContainerMatch.container.id)) {
-          setPotentialParentId(null)
-          return
         }
 
-        setPotentialParentId(bestContainerMatch.container.id)
+        document.body.style.cursor = 'copy'
 
-        // Add highlight class and change cursor
-        const containerElement = document.querySelector(
-          `[data-id="${bestContainerMatch.container.id}"]`
-        )
-        if (containerElement) {
-          // Apply appropriate class based on container type
-          if (
-            bestContainerMatch.container.type === 'subflowNode' &&
-            (bestContainerMatch.container.data as any)?.kind === 'loop'
-          ) {
-            containerElement.classList.add('loop-node-drag-over')
-          } else if (
-            bestContainerMatch.container.type === 'subflowNode' &&
-            (bestContainerMatch.container.data as any)?.kind === 'parallel'
-          ) {
-            containerElement.classList.add('parallel-node-drag-over')
-          }
-          document.body.style.cursor = 'copy'
+        if (potentialParentId !== bestContainer.id) {
+          setPotentialParentId(bestContainer.id)
         }
       } else {
-        // Remove highlighting if no longer over a container
-        if (potentialParentId) {
-          const prevElement = document.querySelector(`[data-id="${potentialParentId}"]`)
-          if (prevElement) {
-            prevElement.classList.remove('loop-node-drag-over', 'parallel-node-drag-over')
+        if (highlightedContainerRef.current) {
+          const previousMetadata = cache.containersById.get(highlightedContainerRef.current)
+          const previousElement = previousMetadata ? ensureContainerElement(previousMetadata) : null
+          if (previousElement) {
+            previousElement.classList.remove('loop-node-drag-over', 'parallel-node-drag-over')
           }
-          setPotentialParentId(null)
-          document.body.style.cursor = ''
+          highlightedContainerRef.current = null
         }
+
+        if (potentialParentId) {
+          setPotentialParentId(null)
+        }
+
+        document.body.style.cursor = ''
       }
     },
     [
-      getNodes,
-      potentialParentId,
       blocks,
-      getNodeHierarchyWrapper,
-      getNodeAbsolutePositionWrapper,
-      getNodeDepthWrapper,
+      buildDragCache,
+      getAbsolutePosition,
       collaborativeUpdateBlockPosition,
+      potentialParentId,
+      getNodeDragDimensions,
+      computeAncestors,
     ]
   )
 
@@ -1593,8 +1718,12 @@ const WorkflowContent = React.memo(() => {
         y: node.position.y,
         parentId: currentParentId,
       })
+
+      const cache = buildDragCache()
+      dragCacheRef.current = cache
+      highlightedContainerRef.current = null
     },
-    [blocks, setDragStartPosition]
+    [blocks, setDragStartPosition, buildDragCache]
   )
 
   // Handle node drag stop to establish parent-child relationships
@@ -1609,6 +1738,9 @@ const WorkflowContent = React.memo(() => {
       // Emit collaborative position update for the final position
       // This ensures other users see the smooth final position
       collaborativeUpdateBlockPosition(node.id, node.position, true)
+
+      dragCacheRef.current = null
+      highlightedContainerRef.current = null
 
       // Record single move entry on drag end to avoid micro-moves
       try {

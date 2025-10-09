@@ -1,5 +1,5 @@
 import type React from 'react'
-import { useEffect, useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import { AlertTriangle, Info } from 'lucide-react'
 import { Label, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
 import { cn } from '@/lib/utils'
@@ -53,7 +53,7 @@ interface SubBlockProps {
   isWide?: boolean
 }
 
-export function SubBlock({
+function SubBlockComponent({
   blockId,
   config,
   isConnecting,
@@ -66,13 +66,6 @@ export function SubBlock({
 }: SubBlockProps) {
   const [isValidJson, setIsValidJson] = useState(true)
 
-  // Debug field diff status
-  useEffect(() => {
-    if (fieldDiffStatus) {
-      console.log(`[SubBlock ${config.id}] fieldDiffStatus:`, fieldDiffStatus)
-    }
-  }, [fieldDiffStatus, config.id])
-
   const handleMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation()
   }
@@ -81,18 +74,14 @@ export function SubBlock({
     setIsValidJson(isValid)
   }
 
-  const isFieldRequired = () => {
-    return config.required === true
-  }
-
-  // Get preview value for this specific sub-block
-  const getPreviewValue = () => {
+  const previewValue = useMemo(() => {
     if (!isPreview || !subBlockValues) return undefined
     return subBlockValues[config.id]?.value ?? null
-  }
+  }, [isPreview, subBlockValues, config.id])
+
+  const isFieldRequired = useMemo(() => config.required === true, [config.required])
 
   const renderInput = () => {
-    const previewValue = getPreviewValue()
     // Disable input if explicitly disabled or in preview mode
     const isDisabled = disabled || isPreview
 
@@ -519,7 +508,7 @@ export function SubBlock({
     }
   }
 
-  const required = isFieldRequired()
+  const required = isFieldRequired
 
   return (
     <div
@@ -582,3 +571,5 @@ export function SubBlock({
     </div>
   )
 }
+
+export const SubBlock = memo(SubBlockComponent)

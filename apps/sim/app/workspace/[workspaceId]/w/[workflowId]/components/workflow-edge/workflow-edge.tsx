@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { X } from 'lucide-react'
 import { BaseEdge, EdgeLabelRenderer, type EdgeProps, getSmoothStepPath } from 'reactflow'
 import type { EdgeDiffStatus } from '@/lib/workflows/diff/types'
@@ -66,56 +65,6 @@ export const WorkflowEdge = ({
 
   // Generate edge identifier using the exact same logic as the diff engine
   const edgeIdentifier = generateEdgeIdentity(source, target, sourceHandle, targetHandle)
-
-  // Debug logging to understand what's happening
-  useEffect(() => {
-    if (edgeIdentifier && diffAnalysis?.edge_diff) {
-      console.log(`[Edge Debug] Edge ${id}:`, {
-        edgeIdentifier,
-        sourceHandle,
-        targetHandle,
-        sourceBlockId: source,
-        targetBlockId: target,
-        isShowingDiff,
-        isDiffMode: currentWorkflow.isDiffMode,
-        edgeDiffAnalysis: diffAnalysis.edge_diff,
-        // Show actual array contents to see why matching fails
-        newEdgesArray: diffAnalysis.edge_diff.new_edges,
-        deletedEdgesArray: diffAnalysis.edge_diff.deleted_edges,
-        unchangedEdgesArray: diffAnalysis.edge_diff.unchanged_edges,
-        // Check if this edge matches any in the diff analysis
-        matchesNew: diffAnalysis.edge_diff.new_edges.includes(edgeIdentifier),
-        matchesDeleted: diffAnalysis.edge_diff.deleted_edges.includes(edgeIdentifier),
-        matchesUnchanged: diffAnalysis.edge_diff.unchanged_edges.includes(edgeIdentifier),
-      })
-    }
-  }, [
-    edgeIdentifier,
-    diffAnalysis,
-    isShowingDiff,
-    id,
-    sourceHandle,
-    targetHandle,
-    source,
-    target,
-    currentWorkflow.isDiffMode,
-  ])
-
-  // One-time debug log of full diff analysis
-  useEffect(() => {
-    if (diffAnalysis && id === Object.keys(currentWorkflow.blocks)[0]) {
-      // Only log once per diff
-      console.log('[Full Diff Analysis]:', {
-        edge_diff: diffAnalysis.edge_diff,
-        new_blocks: diffAnalysis.new_blocks,
-        edited_blocks: diffAnalysis.edited_blocks,
-        deleted_blocks: diffAnalysis.deleted_blocks,
-        isShowingDiff,
-        currentWorkflowEdgeCount: currentWorkflow.edges.length,
-        currentWorkflowBlockCount: Object.keys(currentWorkflow.blocks).length,
-      })
-    }
-  }, [diffAnalysis, id, currentWorkflow.blocks, currentWorkflow.edges, isShowingDiff])
 
   // Determine edge diff status
   let edgeDiffStatus: EdgeDiffStatus = null

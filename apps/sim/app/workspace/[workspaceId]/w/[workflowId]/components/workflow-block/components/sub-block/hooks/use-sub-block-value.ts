@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { isEqual } from 'lodash'
 import { createLogger } from '@/lib/logs/console/logger'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
@@ -204,12 +204,17 @@ export function useSubBlockValue<T = any>(
   )
 
   // Determine the effective value: diff value takes precedence if in diff mode
-  const effectiveValue =
-    isShowingDiff && diffValue !== null
-      ? diffValue
-      : storeValue !== undefined
-        ? storeValue
-        : initialValue
+  const effectiveValue = useMemo(() => {
+    if (isShowingDiff && diffValue !== null) {
+      return diffValue
+    }
+
+    if (storeValue !== undefined) {
+      return storeValue
+    }
+
+    return initialValue
+  }, [isShowingDiff, diffValue, storeValue, initialValue])
 
   // Initialize valueRef on first render
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ChevronsUpDown, Wand2 } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import { useReactFlow } from 'reactflow'
@@ -96,10 +96,15 @@ export function LongInput({
   const accessiblePrefixes = useAccessibleReferencePrefixes(blockId)
 
   // Use preview value when in preview mode, otherwise use store value or prop value
-  const baseValue = isPreview ? previewValue : propValue !== undefined ? propValue : storeValue
+  const baseValue = useMemo(() => {
+    if (isPreview) return previewValue
+    if (propValue !== undefined) return propValue
+    return storeValue
+  }, [isPreview, previewValue, propValue, storeValue])
 
-  // During streaming, use local content; otherwise use base value
-  const value = wandHook?.isStreaming ? localContent : baseValue
+  const value = useMemo(() => {
+    return wandHook?.isStreaming ? localContent : baseValue
+  }, [wandHook?.isStreaming, localContent, baseValue])
 
   // Sync local content with base value when not streaming
   useEffect(() => {
