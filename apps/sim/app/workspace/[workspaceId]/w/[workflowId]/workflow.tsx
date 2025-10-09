@@ -92,6 +92,7 @@ const WorkflowContent = React.memo(() => {
     open: boolean
     triggerName: string
     type: TriggerWarningType
+    blockType?: string
   }>({
     open: false,
     triggerName: '',
@@ -728,12 +729,14 @@ const WorkflowContent = React.memo(() => {
             open: true,
             triggerName: additionIssue.triggerName,
             type: TriggerWarningType.LEGACY_INCOMPATIBILITY,
+            blockType: type,
           })
         } else {
           setTriggerWarning({
             open: true,
             triggerName: additionIssue.triggerName,
             type: TriggerWarningType.DUPLICATE_TRIGGER,
+            blockType: type,
           })
         }
         return
@@ -1000,6 +1003,7 @@ const WorkflowContent = React.memo(() => {
                 dropIssue.issue === 'legacy'
                   ? TriggerWarningType.LEGACY_INCOMPATIBILITY
                   : TriggerWarningType.DUPLICATE_TRIGGER,
+              blockType: data.type,
             })
             return
           }
@@ -1968,6 +1972,7 @@ const WorkflowContent = React.memo(() => {
           onOpenChange={(open) => setTriggerWarning({ ...triggerWarning, open })}
           triggerName={triggerWarning.triggerName}
           type={triggerWarning.type}
+          blockType={triggerWarning.blockType}
         />
 
         {/* Trigger list for empty workflows - only show after workflow has loaded and hydrated */}

@@ -7,6 +7,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { getBlock } from '@/blocks'
 
 export enum TriggerWarningType {
   DUPLICATE_TRIGGER = 'duplicate_trigger',
@@ -18,6 +19,7 @@ interface TriggerWarningDialogProps {
   onOpenChange: (open: boolean) => void
   triggerName: string
   type: TriggerWarningType
+  blockType?: string
 }
 
 export function TriggerWarningDialog({
@@ -25,13 +27,18 @@ export function TriggerWarningDialog({
   onOpenChange,
   triggerName,
   type,
+  blockType,
 }: TriggerWarningDialogProps) {
+  // Determine if this is a trigger block or regular block
+  const isTriggerBlock = blockType ? getBlock(blockType)?.category === 'triggers' : true
+  const blockOrTrigger = isTriggerBlock ? 'trigger' : 'block'
+
   const getTitle = () => {
     switch (type) {
       case TriggerWarningType.LEGACY_INCOMPATIBILITY:
         return 'Cannot mix trigger types'
       case TriggerWarningType.DUPLICATE_TRIGGER:
-        return `Only one ${triggerName} trigger allowed`
+        return `Only one ${triggerName} ${blockOrTrigger} allowed`
     }
   }
 
@@ -40,7 +47,7 @@ export function TriggerWarningDialog({
       case TriggerWarningType.LEGACY_INCOMPATIBILITY:
         return 'Cannot add new trigger blocks when a legacy Start block exists. Available in newer workflows.'
       case TriggerWarningType.DUPLICATE_TRIGGER:
-        return `A workflow can only have one ${triggerName} trigger block. Please remove the existing one before adding a new one.`
+        return `A workflow can only have one ${triggerName} ${blockOrTrigger}. Please remove the existing one before adding a new one.`
     }
   }
 

@@ -10,6 +10,7 @@ export const TRIGGER_TYPES = {
   API: 'api_trigger',
   WEBHOOK: 'webhook',
   SCHEDULE: 'schedule',
+  USER_APPROVAL: 'user_approval',
   STARTER: 'starter', // Legacy
 } as const
 
@@ -223,11 +224,13 @@ export class TriggerUtils {
     // Manual and Input Form can coexist
     // API, Chat triggers must be unique
     // Schedules and webhooks can have multiple instances
+    // User Approval (HITL) must be unique
     return (
       triggerType === TRIGGER_TYPES.API ||
       triggerType === TRIGGER_TYPES.INPUT ||
       triggerType === TRIGGER_TYPES.MANUAL ||
-      triggerType === TRIGGER_TYPES.CHAT
+      triggerType === TRIGGER_TYPES.CHAT ||
+      triggerType === TRIGGER_TYPES.USER_APPROVAL
     )
   }
 
@@ -294,7 +297,12 @@ export class TriggerUtils {
       return blockArray.some((block) => block.type === TRIGGER_TYPES.CHAT)
     }
 
-    // Centralized rule: only API, Input, Chat are single-instance
+    // Only one User Approval (HITL) block allowed
+    if (triggerType === TRIGGER_TYPES.USER_APPROVAL) {
+      return blockArray.some((block) => block.type === TRIGGER_TYPES.USER_APPROVAL)
+    }
+
+    // Centralized rule: only API, Input, Chat, User Approval are single-instance
     if (!TriggerUtils.requiresSingleInstance(triggerType)) {
       return false
     }

@@ -155,40 +155,69 @@ export class PausedExecutionService {
     }
 
     try {
-      // Save the paused execution state to the database
-      await db.insert(pausedWorkflowExecutions).values({
-        id: randomUUID(),
-        workflowId,
-        executionId,
-        userId,
-        pausedAt,
-        executionContext: serializedContext,
-        workflowState: context.workflow || {},
-        environmentVariables: context.environmentVariables || {},
-        workflowInput: null,
-        metadata: {
-          blockId,
-          resumeTriggerType: resumeType,
-          triggerType, // Save the original trigger type
-          pausedAt: pausedAt.toISOString(),
-          // Include parent execution info if this is a child workflow
-          ...((context as any).parentExecutionInfo && {
-            parentExecutionInfo: (context as any).parentExecutionInfo,
-          }),
-          ...(resumeType === 'human' && {
-            humanOperation,
-            humanInputFormat,
-          }),
-          ...(resumeType === 'api' && {
-            apiInputFormat,
-            apiResponseMode,
-            apiBuilderResponse,
-            apiEditorResponse,
-          }),
-        },
-        approvalToken,
-        approvalUsed: false,
-      })
+      // Use INSERT ... ON CONFLICT to handle duplicate execution_id atomically
+      // If the execution_id already exists, just return without error
+      const result = await db
+        .insert(pausedWorkflowExecutions)
+        .values({
+          id: randomUUID(),
+          workflowId,
+          executionId,
+          userId,
+          pausedAt,
+          executionContext: serializedContext,
+          workflowState: context.workflow || {},
+          environmentVariables: context.environmentVariables || {},
+          workflowInput: null,
+          metadata: {
+            blockId,
+            resumeTriggerType: resumeType,
+            triggerType, // Save the original trigger type
+            pausedAt: pausedAt.toISOString(),
+            // Include parent execution info if this is a child workflow
+            ...((context as any).parentExecutionInfo && {
+              parentExecutionInfo: (context as any).parentExecutionInfo,
+            }),
+            ...(resumeType === 'human' && {
+              humanOperation,
+              humanInputFormat,
+            }),
+            ...(resumeType === 'api' && {
+              apiInputFormat,
+              apiResponseMode,
+              apiBuilderResponse,
+              apiEditorResponse,
+            }),
+          },
+          approvalToken,
+          approvalUsed: false,
+        })
+        .onConflictDoNothing({ target: pausedWorkflowExecutions.executionId })
+        .returning()
+
+      // If insert was skipped due to conflict, fetch the existing record
+      if (result.length === 0) {
+        logger.warn('Execution already paused (duplicate call detected), fetching existing approval URL', {
+          executionId,
+          workflowId,
+        })
+        
+        const [existing] = await db
+          .select()
+          .from(pausedWorkflowExecutions)
+          .where(eq(pausedWorkflowExecutions.executionId, executionId))
+          .limit(1)
+        
+        if (!existing) {
+          throw new Error('Failed to retrieve existing paused execution')
+        }
+        
+        const existingToken = existing.approvalToken || approvalToken
+        return {
+          approvalToken: existingToken,
+          approveUrl: `${baseUrl}/approve/${existingToken}`,
+        }
+      }
 
       logger.info('Paused execution saved successfully', {
         executionId,
