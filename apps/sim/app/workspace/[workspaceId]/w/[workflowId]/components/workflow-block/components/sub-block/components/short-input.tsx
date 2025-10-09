@@ -191,6 +191,10 @@ export function ShortInput({
     // Check for tag trigger
     const tagTrigger = checkTagTrigger(newValue, newCursorPosition)
     setShowTags(tagTrigger.show)
+
+    if (tagTrigger.show && activeSourceBlockId !== null) {
+      setActiveSourceBlockId(null)
+    }
   }
 
   // Sync scroll position between input and overlay
@@ -292,14 +296,13 @@ export function ShortInput({
 
       // Update all state in a single batch
       Promise.resolve().then(() => {
-        setStoreValue(newValue)
-        setCursorPosition(dropPosition + 1)
-        setShowTags(true)
-
-        // Pass the source block ID from the dropped connection
         if (data.connectionData?.sourceBlockId) {
           setActiveSourceBlockId(data.connectionData.sourceBlockId)
         }
+
+        setStoreValue(newValue)
+        setCursorPosition(dropPosition + 1)
+        setShowTags(true)
 
         // Set cursor position after state updates
         setTimeout(() => {

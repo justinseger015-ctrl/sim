@@ -317,10 +317,10 @@ IMPORTANT FORMATTING RULES:
       const newCursorPosition = dropPosition + 1
       setCursorPosition(newCursorPosition)
 
-      setShowTags(true)
       if (data.connectionData?.sourceBlockId) {
         setActiveSourceBlockId(data.connectionData.sourceBlockId)
       }
+      setShowTags(true)
 
       setTimeout(() => {
         if (textarea) {

@@ -446,76 +446,43 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
           const outputPaths = generateOutputPaths(blockConfig.outputs || {})
           blockTags = outputPaths.map((path) => `${normalizedBlockName}.${path}`)
         }
-      } else if (!blockConfig.outputs || Object.keys(blockConfig.outputs).length === 0) {
-        if (sourceBlock.type === 'starter') {
-          const startWorkflowValue = mergedSubBlocks?.startWorkflow?.value
-
-          if (startWorkflowValue === 'chat') {
-            // For chat mode, provide input, conversationId, and files
-            blockTags = [
-              `${normalizedBlockName}.input`,
-              `${normalizedBlockName}.conversationId`,
-              `${normalizedBlockName}.files`,
-            ]
-          } else {
-            const inputFormatValue = mergedSubBlocks?.inputFormat?.value
-
-            if (
-              inputFormatValue &&
-              Array.isArray(inputFormatValue) &&
-              inputFormatValue.length > 0
-            ) {
-              blockTags = inputFormatValue
-                .filter((field: { name?: string }) => field.name && field.name.trim() !== '')
-                .map((field: { name: string }) => `${normalizedBlockName}.${field.name}`)
-            } else {
-              blockTags = [normalizedBlockName]
-            }
-          }
-        } else {
+      } else if (blockConfig.category === 'triggers' || sourceBlock.type === 'starter') {
+        // Use the dynamic output helper for triggers and starter blocks
+        const dynamicOutputs = getBlockOutputPaths(sourceBlock.type, mergedSubBlocks)
+        if (dynamicOutputs.length > 0) {
+          blockTags = dynamicOutputs.map((path) => `${normalizedBlockName}.${path}`)
+        } else if (sourceBlock.type === 'starter' || sourceBlock.type === 'generic_webhook') {
           blockTags = [normalizedBlockName]
+        } else {
+          blockTags = []
+        }
+      } else if (sourceBlock?.triggerMode && blockConfig.triggers?.enabled) {
+        const triggerId = blockConfig?.triggers?.available?.[0]
+        const firstTrigger = triggerId
+          ? getTrigger(triggerId)
+          : getTriggersByProvider(sourceBlock.type)[0]
+
+        if (firstTrigger?.outputs) {
+          // Use trigger outputs instead of block outputs
+          const outputPaths = generateOutputPaths(firstTrigger.outputs)
+          blockTags = outputPaths.map((path) => `${normalizedBlockName}.${path}`)
+        } else {
+          const outputPaths = generateOutputPaths(blockConfig.outputs || {})
+          blockTags = outputPaths.map((path) => `${normalizedBlockName}.${path}`)
         }
       } else {
-        // For triggers and starter blocks, use dynamic outputs based on live subblock values
-        if (blockConfig.category === 'triggers' || sourceBlock.type === 'starter') {
-          const dynamicOutputs = getBlockOutputPaths(sourceBlock.type, mergedSubBlocks)
-          if (dynamicOutputs.length > 0) {
-            blockTags = dynamicOutputs.map((path) => `${normalizedBlockName}.${path}`)
-          } else if (sourceBlock.type === 'starter') {
-            blockTags = [normalizedBlockName]
-          } else if (sourceBlock.type === 'generic_webhook') {
-            blockTags = [normalizedBlockName]
-          } else {
-            blockTags = []
-          }
-        } else if (sourceBlock?.triggerMode && blockConfig.triggers?.enabled) {
-          const triggerId = blockConfig?.triggers?.available?.[0]
-          const firstTrigger = triggerId
-            ? getTrigger(triggerId)
-            : getTriggersByProvider(sourceBlock.type)[0]
+        // Check for tool-specific outputs first
+        const operationValue =
+          mergedSubBlocks?.operation?.value ?? getSubBlockValue(activeSourceBlockId, 'operation')
+        const toolOutputPaths = operationValue
+          ? generateToolOutputPaths(blockConfig, operationValue)
+          : []
 
-          if (firstTrigger?.outputs) {
-            // Use trigger outputs instead of block outputs
-            const outputPaths = generateOutputPaths(firstTrigger.outputs)
-            blockTags = outputPaths.map((path) => `${normalizedBlockName}.${path}`)
-          } else {
-            const outputPaths = generateOutputPaths(blockConfig.outputs || {})
-            blockTags = outputPaths.map((path) => `${normalizedBlockName}.${path}`)
-          }
+        if (toolOutputPaths.length > 0) {
+          blockTags = toolOutputPaths.map((path) => `${normalizedBlockName}.${path}`)
         } else {
-          // Check for tool-specific outputs first
-          const operationValue =
-            mergedSubBlocks?.operation?.value ?? getSubBlockValue(activeSourceBlockId, 'operation')
-          const toolOutputPaths = operationValue
-            ? generateToolOutputPaths(blockConfig, operationValue)
-            : []
-
-          if (toolOutputPaths.length > 0) {
-            blockTags = toolOutputPaths.map((path) => `${normalizedBlockName}.${path}`)
-          } else {
-            const outputPaths = generateOutputPaths(blockConfig.outputs || {})
-            blockTags = outputPaths.map((path) => `${normalizedBlockName}.${path}`)
-          }
+          const outputPaths = generateOutputPaths(blockConfig.outputs || {})
+          blockTags = outputPaths.map((path) => `${normalizedBlockName}.${path}`)
         }
       }
 
@@ -840,6 +807,7 @@ export const TagDropdown: React.FC<TagDropdownProps> = ({
     parallels,
     workflowVariables,
     workflowId,
+    workflowSubBlockValues,
   ])
 
   const filteredTags = useMemo(() => {

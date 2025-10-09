@@ -177,6 +177,10 @@ export function LongInput({
     // Check for tag trigger
     const tagTrigger = checkTagTrigger(newValue, newCursorPosition)
     setShowTags(tagTrigger.show)
+
+    if (tagTrigger.show && activeSourceBlockId !== null) {
+      setActiveSourceBlockId(null)
+    }
   }
 
   // Sync scroll position between textarea and overlay
@@ -261,7 +265,10 @@ export function LongInput({
 
       // Update all state in a single batch
       Promise.resolve().then(() => {
-        // Update local content immediately
+        if (data.connectionData?.sourceBlockId) {
+          setActiveSourceBlockId(data.connectionData.sourceBlockId)
+        }
+
         setLocalContent(newValue)
 
         if (onChange) {
@@ -271,11 +278,6 @@ export function LongInput({
         }
         setCursorPosition(dropPosition + 1)
         setShowTags(true)
-
-        // Pass the source block ID from the dropped connection
-        if (data.connectionData?.sourceBlockId) {
-          setActiveSourceBlockId(data.connectionData.sourceBlockId)
-        }
 
         // Set cursor position after state updates
         setTimeout(() => {

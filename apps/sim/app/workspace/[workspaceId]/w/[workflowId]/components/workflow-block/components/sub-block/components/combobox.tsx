@@ -271,13 +271,13 @@ export function ComboBox({
       inputRef.current?.focus()
 
       Promise.resolve().then(() => {
-        setStoreValue(newValue)
-        setCursorPosition(dropPosition + 1)
-        setShowTags(true)
-
         if (data.connectionData?.sourceBlockId) {
           setActiveSourceBlockId(data.connectionData.sourceBlockId)
         }
+
+        setStoreValue(newValue)
+        setCursorPosition(dropPosition + 1)
+        setShowTags(true)
 
         setTimeout(() => {
           if (inputRef.current) {
