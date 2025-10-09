@@ -43,6 +43,11 @@ interface WorkflowBlockProps {
 export function WorkflowBlock({ id, data }: NodeProps<WorkflowBlockProps>) {
   const { type, config, name, isActive: dataIsActive, isPending } = data
 
+  // Debug logging for pending state in preview mode
+  if (data.isPreview && isPending !== undefined) {
+    logger.debug(`Block ${id} (${name}) isPending:`, isPending)
+  }
+
   // State management
   const [isConnecting, setIsConnecting] = useState(false)
 
@@ -705,7 +710,7 @@ export function WorkflowBlock({ id, data }: NodeProps<WorkflowBlockProps>) {
   }, [childWorkflowId])
 
   return (
-    <div className='group relative'>
+    <div className={cn('group relative', isPending && 'opacity-40')}>
       <Card
         ref={blockRef}
         className={cn(
@@ -714,7 +719,6 @@ export function WorkflowBlock({ id, data }: NodeProps<WorkflowBlockProps>) {
           displayIsWide ? 'w-[480px]' : 'w-[320px]',
           !isEnabled && 'shadow-sm',
           isActive && 'animate-pulse-ring ring-2 ring-blue-500',
-          isPending && 'ring-2 ring-amber-500',
           // Diff highlighting
           diffStatus === 'new' && 'bg-green-50/50 ring-2 ring-green-500 dark:bg-green-900/10',
           diffStatus === 'edited' && 'bg-orange-50/50 ring-2 ring-orange-500 dark:bg-orange-900/10',
@@ -723,12 +727,6 @@ export function WorkflowBlock({ id, data }: NodeProps<WorkflowBlockProps>) {
           'z-[20]'
         )}
       >
-        {/* Show debug indicator for pending blocks */}
-        {isPending && (
-          <div className='-top-6 -translate-x-1/2 absolute left-1/2 z-10 transform rounded-t-md bg-amber-500 px-2 py-0.5 text-white text-xs'>
-            Next Step
-          </div>
-        )}
 
         <ActionBar blockId={id} blockType={type} disabled={!userPermissions.canEdit} />
         {/* Connection Blocks - Don't show for trigger blocks, starter blocks, or blocks in trigger mode */}

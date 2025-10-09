@@ -127,6 +127,15 @@ export function WorkflowPreview({
   const nodes: Node[] = useMemo(() => {
     if (!isValidWorkflowState) return []
 
+    // Debug execution state
+    logger.debug('WorkflowPreview execution state:', {
+      isPaused,
+      pausedBlockId,
+      executedBlockIds,
+      triggerBlockId,
+      totalBlocks: Object.keys(workflowState.blocks || {}).length,
+    })
+
     const nodeArray: Node[] = []
 
     Object.entries(workflowState.blocks || {}).forEach(([blockId, block]) => {
@@ -203,8 +212,15 @@ export function WorkflowPreview({
         })
       }
       
-      // Don't gray out the trigger that was used, executed blocks, or the paused block
-      const isPending = isPaused && !isExecuted && !isPausedAtBlock && !isUsedTrigger
+      // If we have executedBlockIds, we're in a frozen/paused state
+      // Gray out blocks that haven't been executed (unless it's the paused block itself or the used trigger)
+      const hasExecutionData = executedBlockIds.length > 0
+      const isPending = hasExecutionData && !isExecuted && !isPausedAtBlock && !isUsedTrigger
+      
+      // Debug pending blocks
+      if (isPending) {
+        logger.debug(`Block ${blockId} (${block.name}) marked as pending`)
+      }
 
       nodeArray.push({
         id: blockId,
@@ -220,12 +236,11 @@ export function WorkflowPreview({
           isPreview: true,
           subBlockValues: subBlocksClone,
           executionStatus: isPausedAtBlock ? 'paused' : isExecuted ? 'executed' : isPending ? 'pending' : undefined,
+          isPending: isPending,
         },
         className: isPausedAtBlock 
           ? 'ring-2 ring-amber-500 ring-offset-2 rounded-lg' 
-          : isPending 
-            ? 'opacity-50' 
-            : undefined,
+          : undefined,
       })
 
       if (block.type === 'loop') {
@@ -237,6 +252,11 @@ export function WorkflowPreview({
           const childConfig = getBlock(childBlock.type)
 
           if (childConfig) {
+            // Check execution status for child blocks too
+            const isChildExecuted = executedBlockIds.includes(childId)
+            const isChildPausedAt = pausedBlockId === childId
+            const isChildPending = hasExecutionData && !isChildExecuted && !isChildPausedAt
+            
             nodeArray.push({
               id: childId,
               type: 'workflowBlock',
@@ -254,8 +274,12 @@ export function WorkflowPreview({
                 parentId: blockId,
                 canEdit: false,
                 isPreview: true,
+                isPending: isChildPending,
               },
               draggable: false,
+              className: isChildPausedAt 
+                ? 'ring-2 ring-amber-500 ring-offset-2 rounded-lg' 
+                : undefined,
             })
           }
         })

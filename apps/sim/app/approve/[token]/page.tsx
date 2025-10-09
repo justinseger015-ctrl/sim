@@ -423,6 +423,25 @@ export default function ApprovalPage() {
     handleAction('approve', formData)
   }
 
+  // Recursively find a trace span by blockId
+  const findTraceSpanByBlockId = (spans: any[] | undefined, blockId: string): any => {
+    if (!spans) return null
+    
+    for (const span of spans) {
+      if (span.blockId === blockId) {
+        return span
+      }
+      
+      // Search in children recursively
+      if (span.children && span.children.length > 0) {
+        const found = findTraceSpanByBlockId(span.children, blockId)
+        if (found) return found
+      }
+    }
+    
+    return null
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-screen flex-col bg-background">
@@ -611,8 +630,9 @@ export default function ApprovalPage() {
                       
                       {/* Find execution data for this block */}
                       {(() => {
-                        const blockExecution = executionData.traceSpans?.find(
-                          (span: any) => span.blockId === selectedBlockId
+                        const blockExecution = findTraceSpanByBlockId(
+                          executionData.traceSpans,
+                          selectedBlockId
                         )
                         
                         if (blockExecution) {
