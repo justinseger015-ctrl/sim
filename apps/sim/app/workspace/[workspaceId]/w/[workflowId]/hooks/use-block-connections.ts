@@ -1,6 +1,8 @@
+import { useCallback, useMemo } from 'react'
 import { shallow } from 'zustand/shallow'
 import { BlockPathCalculator } from '@/lib/block-path-calculator'
 import { createLogger } from '@/lib/logs/console/logger'
+import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
@@ -92,28 +94,60 @@ export function useBlockConnections(blockId: string) {
     shallow
   )
 
-  // Find all blocks along paths leading to this block
-  const allPathNodeIds = BlockPathCalculator.findAllPathNodes(edges, blockId)
+  const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
 
-  // Map each path node to a ConnectedBlock structure
-  const allPathConnections = allPathNodeIds
-    .map((sourceId) => {
+  const upstreamNodeIds = useMemo(
+    () => BlockPathCalculator.findAllPathNodes(edges, blockId),
+    [edges, blockId]
+  )
+
+  const directSourceIds = useMemo(
+    () =>
+      edges
+        .filter((edge) => edge.target === blockId)
+        .map((edge) => edge.source)
+        .filter((sourceId, index, array) => array.indexOf(sourceId) === index),
+    [edges, blockId]
+  )
+
+  const relevantBlockIds = useMemo(() => {
+    const set = new Set<string>([...upstreamNodeIds, ...directSourceIds])
+    set.delete(blockId)
+    return Array.from(set)
+  }, [upstreamNodeIds, directSourceIds, blockId])
+
+  const responseFormatsByBlock = useSubBlockStore(
+    useCallback(
+      (state) => {
+        if (!activeWorkflowId) return {}
+        const workflowValues = state.workflowValues[activeWorkflowId] || {}
+        const result: Record<string, any> = {}
+        relevantBlockIds.forEach((id) => {
+          const stored = workflowValues[id]?.responseFormat
+          if (stored !== undefined) {
+            result[id] = stored
+          }
+        })
+        return result
+      },
+      [activeWorkflowId, relevantBlockIds]
+    ),
+    shallow
+  )
+
+  const mapToConnectedBlock = useCallback(
+    (sourceId: string): ConnectedBlock | null => {
       const sourceBlock = blocks[sourceId]
       if (!sourceBlock) return null
 
-      // Get the response format from the subblock store
-      const responseFormatValue = useSubBlockStore.getState().getValue(sourceId, 'responseFormat')
-
-      // Safely parse response format with proper error handling
+      const responseFormatValue = responseFormatsByBlock[sourceId]
       const responseFormat = parseResponseFormatSafely(responseFormatValue, sourceId)
 
-      // Get the default output type from the block's outputs
       const defaultOutputs: Field[] = Object.entries(sourceBlock.outputs || {}).map(([key]) => ({
         name: key,
         type: 'string',
       }))
 
-      // Extract fields from the response format using our helper function
       const outputFields = responseFormat ? extractFieldsFromSchema(responseFormat) : defaultOutputs
 
       return {
@@ -123,42 +157,19 @@ export function useBlockConnections(blockId: string) {
         name: sourceBlock.name,
         responseFormat,
       }
-    })
-    .filter(Boolean) as ConnectedBlock[]
+    },
+    [blocks, responseFormatsByBlock]
+  )
 
-  // Keep the original incoming connections for compatibility
-  const directIncomingConnections = edges
-    .filter((edge) => edge.target === blockId)
-    .map((edge) => {
-      const sourceBlock = blocks[edge.source]
-      if (!sourceBlock) return null
+  const allPathConnections = useMemo(
+    () => upstreamNodeIds.map(mapToConnectedBlock).filter(Boolean) as ConnectedBlock[],
+    [upstreamNodeIds, mapToConnectedBlock]
+  )
 
-      // Get the response format from the subblock store instead
-      const responseFormatValue = useSubBlockStore
-        .getState()
-        .getValue(edge.source, 'responseFormat')
-
-      // Safely parse response format with proper error handling
-      const responseFormat = parseResponseFormatSafely(responseFormatValue, edge.source)
-
-      // Get the default output type from the block's outputs
-      const defaultOutputs: Field[] = Object.entries(sourceBlock.outputs || {}).map(([key]) => ({
-        name: key,
-        type: 'string',
-      }))
-
-      // Extract fields from the response format using our helper function
-      const outputFields = responseFormat ? extractFieldsFromSchema(responseFormat) : defaultOutputs
-
-      return {
-        id: sourceBlock.id,
-        type: sourceBlock.type,
-        outputType: outputFields.map((field: Field) => field.name),
-        name: sourceBlock.name,
-        responseFormat,
-      }
-    })
-    .filter(Boolean) as ConnectedBlock[]
+  const directIncomingConnections = useMemo(
+    () => directSourceIds.map(mapToConnectedBlock).filter(Boolean) as ConnectedBlock[],
+    [directSourceIds, mapToConnectedBlock]
+  )
 
   return {
     incomingConnections: allPathConnections,
