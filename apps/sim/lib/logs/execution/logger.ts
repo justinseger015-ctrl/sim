@@ -61,42 +61,47 @@ export class ExecutionLogger implements IExecutionLoggerService {
 
     const startTime = new Date()
 
-    const [workflowLog] = await db
-      .insert(workflowExecutionLogs)
-      .values({
-        id: uuidv4(),
-        workflowId,
-        executionId,
-        stateSnapshotId: snapshotResult.snapshot.id,
-        level: 'info',
-        trigger: trigger.type,
-        startedAt: startTime,
-        endedAt: null,
-        totalDurationMs: null,
-        executionData: {
-          environment,
-          trigger,
+    try {
+      const [workflowLog] = await db
+        .insert(workflowExecutionLogs)
+        .values({
+          id: uuidv4(),
+          workflowId,
+          executionId,
+          stateSnapshotId: snapshotResult.snapshot.id,
+          level: 'info',
+          trigger: trigger.type,
+          startedAt: startTime,
+          endedAt: null,
+          totalDurationMs: null,
+          executionData: {
+            environment,
+            trigger,
+          },
+        })
+        .returning()
+
+      logger.debug(`Created workflow log ${workflowLog.id} for execution ${executionId}`)
+
+      return {
+        workflowLog: {
+          id: workflowLog.id,
+          workflowId: workflowLog.workflowId,
+          executionId: workflowLog.executionId,
+          stateSnapshotId: workflowLog.stateSnapshotId,
+          level: workflowLog.level as 'info' | 'error' | 'pending',
+          trigger: workflowLog.trigger as ExecutionTrigger['type'],
+          startedAt: workflowLog.startedAt.toISOString(),
+          endedAt: workflowLog.endedAt?.toISOString() || workflowLog.startedAt.toISOString(),
+          totalDurationMs: workflowLog.totalDurationMs || 0,
+          executionData: workflowLog.executionData as WorkflowExecutionLog['executionData'],
+          createdAt: workflowLog.createdAt.toISOString(),
         },
-      })
-      .returning()
-
-    logger.debug(`Created workflow log ${workflowLog.id} for execution ${executionId}`)
-
-    return {
-      workflowLog: {
-        id: workflowLog.id,
-        workflowId: workflowLog.workflowId,
-        executionId: workflowLog.executionId,
-        stateSnapshotId: workflowLog.stateSnapshotId,
-        level: workflowLog.level as 'info' | 'error',
-        trigger: workflowLog.trigger as ExecutionTrigger['type'],
-        startedAt: workflowLog.startedAt.toISOString(),
-        endedAt: workflowLog.endedAt?.toISOString() || workflowLog.startedAt.toISOString(),
-        totalDurationMs: workflowLog.totalDurationMs || 0,
-        executionData: workflowLog.executionData as WorkflowExecutionLog['executionData'],
-        createdAt: workflowLog.createdAt.toISOString(),
-      },
-      snapshot: snapshotResult.snapshot,
+        snapshot: snapshotResult.snapshot,
+      }
+    } catch (error) {
+      logger.error(`Failed to create workflow log for ${executionId}`, error)
+      throw error
     }
   }
 

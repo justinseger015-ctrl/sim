@@ -53,15 +53,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       // Only create a new log entry if one doesn't exist
       if (existingLog.length === 0) {
-        await loggingSession.safeStart({
+        const startResult = await loggingSession.safeStart({
           userId,
           workspaceId,
           variables: {},
         })
-        logger.info(`[${requestId}] Created new log entry for execution ${executionId}`)
+        logger.info(`[${requestId}] Log creation result`, {
+          executionId,
+          success: startResult,
+          userId,
+          workspaceId,
+        })
       } else {
         logger.info(`[${requestId}] Log entry already exists for execution ${executionId}`, {
           hasEndedAt: !!existingLog[0].endedAt,
+          level: existingLog[0].level,
         })
       }
 
@@ -75,12 +81,28 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         // Build trace spans for paused execution (includes blocks executed before pause)
         const { traceSpans, totalDuration } = buildTraceSpans(result)
         
-        // Update log to pending status with current trace spans
+        // Calculate costs from executed blocks
+        const { calculateCostSummary } = await import('@/lib/logs/execution/logging-factory')
+        const costSummary = calculateCostSummary(traceSpans)
+        
+        // Update log to pending status with current trace spans and costs
+        // Note: approval token is stored in pausedWorkflowExecutions and joined in logs API
         await db
           .update(workflowExecutionLogs)
           .set({
             level: 'pending',
             totalDurationMs: totalDuration,
+            cost: {
+              total: costSummary.totalCost,
+              input: costSummary.totalInputCost,
+              output: costSummary.totalOutputCost,
+              tokens: {
+                prompt: costSummary.totalPromptTokens,
+                completion: costSummary.totalCompletionTokens,
+                total: costSummary.totalTokens,
+              },
+              models: costSummary.models,
+            },
             executionData: sql`jsonb_set(
               COALESCE(execution_data, '{}'::jsonb),
               '{traceSpans}',
@@ -89,7 +111,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           })
           .where(eq(workflowExecutionLogs.executionId, executionId))
         
-        logger.info(`[${requestId}] Updated log to pending status with ${traceSpans.length} trace spans`)
+        logger.info(`[${requestId}] Updated log to pending status`, {
+          traceSpansCount: traceSpans.length,
+          totalCost: costSummary.totalCost,
+          modelCost: costSummary.modelCost,
+        })
         
         return createSuccessResponse({
           message: 'Execution paused - log marked as pending',

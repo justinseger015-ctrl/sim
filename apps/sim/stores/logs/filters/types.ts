@@ -124,7 +124,7 @@ export interface LogsResponse {
 }
 
 export type TimeRange = 'Past 30 minutes' | 'Past hour' | 'Past 24 hours' | 'All time'
-export type LogLevel = 'error' | 'info' | 'all'
+export type LogLevel = 'error' | 'info' | 'pending' | 'all'
 export type TriggerType = 'chat' | 'api' | 'webhook' | 'manual' | 'schedule' | 'all'
 
 export interface FilterState {

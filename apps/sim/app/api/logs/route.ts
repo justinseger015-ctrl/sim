@@ -1,5 +1,5 @@
 import { db } from '@sim/db'
-import { permissions, workflow, workflowExecutionLogs } from '@sim/db/schema'
+import { pausedWorkflowExecutions, permissions, workflow, workflowExecutionLogs } from '@sim/db/schema'
 import { and, desc, eq, gte, inArray, lte, type SQL, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -68,6 +68,7 @@ export async function GET(request: NextRequest) {
               workflowWorkspaceId: workflow.workspaceId,
               workflowCreatedAt: workflow.createdAt,
               workflowUpdatedAt: workflow.updatedAt,
+              approvalToken: pausedWorkflowExecutions.approvalToken,
             }
           : {
               // Basic mode - exclude large fields for better performance
@@ -92,6 +93,7 @@ export async function GET(request: NextRequest) {
               workflowWorkspaceId: workflow.workspaceId,
               workflowCreatedAt: workflow.createdAt,
               workflowUpdatedAt: workflow.updatedAt,
+              approvalToken: pausedWorkflowExecutions.approvalToken,
             }
 
       const baseQuery = db
@@ -111,6 +113,10 @@ export async function GET(request: NextRequest) {
             eq(permissions.entityId, workflow.workspaceId),
             eq(permissions.userId, userId)
           )
+        )
+        .leftJoin(
+          pausedWorkflowExecutions,
+          eq(workflowExecutionLogs.executionId, pausedWorkflowExecutions.executionId)
         )
 
       // Build additional conditions for the query
@@ -200,6 +206,10 @@ export async function GET(request: NextRequest) {
             eq(permissions.entityId, workflow.workspaceId),
             eq(permissions.userId, userId)
           )
+        )
+        .leftJoin(
+          pausedWorkflowExecutions,
+          eq(workflowExecutionLogs.executionId, pausedWorkflowExecutions.executionId)
         )
         .where(conditions)
 
@@ -340,6 +350,7 @@ export async function GET(request: NextRequest) {
           createdAt: log.startedAt.toISOString(),
           files: params.details === 'full' ? log.files || undefined : undefined,
           workflow: workflowSummary,
+          approvalToken: log.approvalToken || undefined, // Include approval token for pending executions
           executionData:
             params.details === 'full'
               ? {

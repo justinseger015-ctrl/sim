@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AlertCircle, Info, Loader2, Play, RefreshCw, Square } from 'lucide-react'
+import { AlertCircle, ExternalLink, Info, Loader2, Play, RefreshCw, Square } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -764,27 +764,44 @@ export default function Logs() {
               {/* Header */}
               <div>
                 <div className='border-border border-b'>
-                  <div className='grid min-w-[600px] grid-cols-[120px_80px_120px_120px] gap-2 px-2 pb-3 md:grid-cols-[140px_90px_140px_120px] md:gap-3 lg:min-w-0 lg:grid-cols-[160px_100px_160px_120px] lg:gap-4 xl:grid-cols-[160px_100px_160px_120px_120px_100px]'>
-                    <div className='font-[480] font-sans text-[13px] text-muted-foreground leading-normal'>
-                      Time
-                    </div>
-                    <div className='font-[480] font-sans text-[13px] text-muted-foreground leading-normal'>
-                      Status
-                    </div>
-                    <div className='font-[480] font-sans text-[13px] text-muted-foreground leading-normal'>
-                      Workflow
-                    </div>
-                    <div className='font-[480] font-sans text-[13px] text-muted-foreground leading-normal'>
-                      Cost
-                    </div>
-                    <div className='hidden font-[480] font-sans text-[13px] text-muted-foreground leading-normal xl:block'>
-                      Trigger
-                    </div>
+                  {(() => {
+                    // Check if any log has pending approval
+                    const hasPendingApprovals = logs.some(log => log.level === 'pending' && (log as any).approvalToken)
+                    const gridCols = hasPendingApprovals 
+                      ? 'grid-cols-[120px_80px_120px_100px] md:grid-cols-[140px_90px_140px_120px] lg:grid-cols-[160px_100px_160px_100px] xl:grid-cols-[160px_100px_160px_100px_100px_100px_80px]'
+                      : 'grid-cols-[120px_80px_120px_100px] md:grid-cols-[140px_90px_140px_120px] lg:grid-cols-[160px_100px_160px_100px] xl:grid-cols-[160px_100px_160px_100px_100px_100px]'
+                    
+                    return (
+                      <div className={`grid min-w-[600px] ${gridCols} gap-2 px-2 pb-3 md:gap-3 lg:min-w-0 lg:gap-4`}>
+                        <div className='font-[480] font-sans text-[13px] text-muted-foreground leading-normal'>
+                          Time
+                        </div>
+                        <div className='font-[480] font-sans text-[13px] text-muted-foreground leading-normal'>
+                          Status
+                        </div>
+                        <div className='font-[480] font-sans text-[13px] text-muted-foreground leading-normal'>
+                          Workflow
+                        </div>
+                        <div className='font-[480] font-sans text-[13px] text-muted-foreground leading-normal'>
+                          Cost
+                        </div>
+                        <div className='hidden font-[480] font-sans text-[13px] text-muted-foreground leading-normal xl:block'>
+                          Trigger
+                        </div>
 
-                    <div className='hidden font-[480] font-sans text-[13px] text-muted-foreground leading-normal xl:block'>
-                      Duration
-                    </div>
-                  </div>
+                        <div className='hidden font-[480] font-sans text-[13px] text-muted-foreground leading-normal xl:block'>
+                          Duration
+                        </div>
+                        
+                        {/* Approval column header - only show if there are pending approvals */}
+                        {hasPendingApprovals && (
+                          <div className='hidden font-[480] font-sans text-[13px] text-muted-foreground leading-normal xl:block'>
+                            Approval
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
                 </div>
               </div>
             </div>
@@ -814,20 +831,29 @@ export default function Logs() {
                 </div>
               ) : (
                 <div className='pb-4'>
-                  {logs.map((log) => {
-                    const formattedDate = formatDate(log.createdAt)
-                    const isSelected = selectedLog?.id === log.id
-
+                  {(() => {
+                    // Check if any log has pending approval for consistent grid
+                    const hasPendingApprovals = logs.some(log => log.level === 'pending' && (log as any).approvalToken)
+                    const gridCols = hasPendingApprovals 
+                      ? 'grid-cols-[120px_80px_120px_100px] md:grid-cols-[140px_90px_140px_120px] lg:grid-cols-[160px_100px_160px_100px] xl:grid-cols-[160px_100px_160px_100px_100px_100px_80px]'
+                      : 'grid-cols-[120px_80px_120px_100px] md:grid-cols-[140px_90px_140px_120px] lg:grid-cols-[160px_100px_160px_100px] xl:grid-cols-[160px_100px_160px_100px_100px_100px]'
+                    
                     return (
-                      <div
-                        key={log.id}
-                        ref={isSelected ? selectedRowRef : null}
-                        className={`cursor-pointer border-border border-b transition-all duration-200 ${
-                          isSelected ? 'bg-accent/40' : 'hover:bg-accent/20'
-                        }`}
-                        onClick={() => handleLogClick(log)}
-                      >
-                        <div className='grid min-w-[600px] grid-cols-[120px_80px_120px_120px] items-center gap-2 px-2 py-4 md:grid-cols-[140px_90px_140px_120px] md:gap-3 lg:min-w-0 lg:grid-cols-[160px_100px_160px_120px] lg:gap-4 xl:grid-cols-[160px_100px_160px_120px_120px_100px]'>
+                      <>
+                        {logs.map((log) => {
+                          const formattedDate = formatDate(log.createdAt)
+                          const isSelected = selectedLog?.id === log.id
+
+                          return (
+                            <div
+                              key={log.id}
+                              ref={isSelected ? selectedRowRef : null}
+                              className={`cursor-pointer border-border border-b transition-all duration-200 ${
+                                isSelected ? 'bg-accent/40' : 'hover:bg-accent/20'
+                              }`}
+                              onClick={() => handleLogClick(log)}
+                            >
+                              <div className={`grid min-w-[600px] ${gridCols} items-center gap-2 px-2 py-4 md:gap-3 lg:min-w-0 lg:gap-4`}>
                           {/* Time */}
                           <div>
                             <div className='text-[13px]'>
@@ -904,10 +930,30 @@ export default function Logs() {
                               {log.duration || '—'}
                             </div>
                           </div>
+                          
+                          {/* Approval - only show if there are pending approvals */}
+                          {hasPendingApprovals && (
+                            <div className='hidden xl:flex xl:items-center xl:justify-center'>
+                              {log.level === 'pending' && (log as any).approvalToken ? (
+                                <a
+                                  href={`/approve/${(log as any).approvalToken}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className='flex items-center justify-center p-1 rounded hover:bg-accent transition-colors'
+                                >
+                                  <ExternalLink className='h-4 w-4 text-muted-foreground hover:text-foreground' />
+                                </a>
+                              ) : null}
+                            </div>
+                          )}
+                          </div>
                         </div>
-                      </div>
-                    )
-                  })}
+                      )
+                    })}
+                  </>
+                )
+              })()}
 
                   {/* Infinite scroll loader */}
                   {hasMore && (

@@ -145,10 +145,12 @@ export function calculateCostSummary(traceSpans: any[]): {
   }
 
   const modelCost = totalCost
-  totalCost += BASE_EXECUTION_CHARGE
+  // Base execution charge is already added at workflow start
+  // Just add model costs here
+  const finalTotalCost = BASE_EXECUTION_CHARGE + modelCost
 
   return {
-    totalCost,
+    totalCost: finalTotalCost,
     totalInputCost,
     totalOutputCost,
     totalTokens,

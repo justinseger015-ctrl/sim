@@ -29,7 +29,7 @@ const parseTimeRangeFromURL = (value: string | null): TimeRange => {
 }
 
 const parseLogLevelFromURL = (value: string | null): LogLevel => {
-  if (value === 'error' || value === 'info') return value
+  if (value === 'error' || value === 'info' || value === 'pending') return value
   return 'all'
 }
 

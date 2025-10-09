@@ -15,6 +15,7 @@ export default function Level() {
   const specificLevels: { value: LogLevel; label: string; color: string }[] = [
     { value: 'error', label: 'Error', color: 'bg-destructive/100' },
     { value: 'info', label: 'Info', color: 'bg-muted-foreground/100' },
+    { value: 'pending', label: 'Pending', color: 'bg-amber-500/100' },
   ]
 
   const getDisplayLabel = () => {
