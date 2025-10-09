@@ -72,6 +72,7 @@ export interface BlockLog {
   output?: any // Output data from successful execution
   input?: any // Input data for the block execution
   error?: string // Error message if execution failed
+  pending?: boolean // Whether block is waiting for user action (HITL blocks)
 }
 
 /**

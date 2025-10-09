@@ -919,6 +919,10 @@ export class WaitBlockHandler implements BlockHandler {
           }
         }
         
+        // Mark output with special flag so Executor knows to set pending status on the log
+        // Don't create a log here - the Executor will do that
+        output._isPending = true
+        
         return output
       }
 

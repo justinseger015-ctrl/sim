@@ -209,7 +209,7 @@ export async function GET(
           name: log.blockName || log.blockId,
           type: log.blockType || 'unknown',
           blockId: log.blockId,
-          status: log.success === false ? 'error' : 'success',
+          status: log.pending ? 'pending' : log.success === false ? 'error' : 'success',
           startTime: log.startedAt,
           endTime: log.endedAt,
           duration: log.durationMs || 0,

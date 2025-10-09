@@ -81,7 +81,7 @@ export interface WorkflowExecutionLog {
   workflowId: string
   executionId: string
   stateSnapshotId: string
-  level: 'info' | 'error'
+  level: 'info' | 'error' | 'pending'
   trigger: ExecutionTrigger['type']
   startedAt: string
   endedAt: string

@@ -707,6 +707,12 @@ export function useWorkflowExecution() {
             
             setIsExecuting(false)
             setActiveBlocks(new Set())
+            
+            // Persist logs for paused execution (marked as pending)
+            persistLogs(executionId, result).catch((err) => {
+              logger.error('Error persisting paused execution logs:', { error: err })
+            })
+            
             // Executor and pausedContext are now in store for manual resume
           } else {
             if (!isDebugModeEnabled) {

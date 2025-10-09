@@ -2621,6 +2621,13 @@ export class Executor {
       // Handle child workflow logs integration
       this.integrateChildWorkflowLogs(block, output)
 
+      // Check if this is a pending block (HITL waiting for approval)
+      if (output && typeof output === 'object' && (output as any)._isPending) {
+        blockLog.pending = true
+        // Remove the internal flag from output
+        delete (output as any)._isPending
+      }
+
       context.blockLogs.push(blockLog)
 
       // Skip console logging for infrastructure blocks and trigger blocks

@@ -850,7 +850,9 @@ export default function Logs() {
                                 'inline-flex items-center rounded-[8px] px-[6px] py-[2px] font-medium text-xs transition-all duration-200 lg:px-[8px]',
                                 log.level === 'error'
                                   ? 'bg-red-500 text-white'
-                                  : 'bg-secondary text-card-foreground'
+                                  : log.level === 'pending'
+                                    ? 'bg-amber-500 text-white'
+                                    : 'bg-secondary text-card-foreground'
                               )}
                             >
                               {log.level}

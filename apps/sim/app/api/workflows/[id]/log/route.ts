@@ -1,7 +1,7 @@
 import type { NextRequest } from 'next/server'
 import { db } from '@sim/db'
 import { workflowExecutionLogs } from '@sim/db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { createLogger } from '@/lib/logs/console/logger'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
@@ -65,36 +65,57 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         })
       }
 
-      // Handle paused executions - don't complete the log
+      // Handle paused executions - mark as pending
       if (isPaused) {
-        logger.info(`[${requestId}] Execution paused at HITL block, keeping log open for later completion`, {
+        logger.info(`[${requestId}] Execution paused at HITL block, marking as pending`, {
           executionId,
           waitBlockInfo: result.metadata?.waitBlockInfo,
         })
         
+        // Build trace spans for paused execution (includes blocks executed before pause)
+        const { traceSpans, totalDuration } = buildTraceSpans(result)
+        
+        // Update log to pending status with current trace spans
+        await db
+          .update(workflowExecutionLogs)
+          .set({
+            level: 'pending',
+            totalDurationMs: totalDuration,
+            executionData: sql`jsonb_set(
+              COALESCE(execution_data, '{}'::jsonb),
+              '{traceSpans}',
+              ${JSON.stringify(traceSpans)}::jsonb
+            )`,
+          })
+          .where(eq(workflowExecutionLogs.executionId, executionId))
+        
+        logger.info(`[${requestId}] Updated log to pending status with ${traceSpans.length} trace spans`)
+        
         return createSuccessResponse({
-          message: 'Execution paused - log created but kept open for resume',
+          message: 'Execution paused - log marked as pending',
         })
       }
       
       // Handle non-paused executions - complete the log
-      if (existingLog.length > 0 && existingLog[0].endedAt) {
-        // Log already exists and is marked as completed
+      if (existingLog.length > 0 && (existingLog[0].endedAt || existingLog[0].level === 'pending')) {
+        // Log already exists and is either completed or pending (resume case)
         // Check if this is a resumed execution with new trace spans to update
         const hasTraceSpans = result.traceSpans && Array.isArray(result.traceSpans) && result.traceSpans.length > 0
+        const wasPending = existingLog[0].level === 'pending'
         
-        if (hasTraceSpans) {
-          // This is a resumed execution with trace spans - update the existing log
-          logger.info(`[${requestId}] Updating completed log with trace spans from resumed execution`, {
+        if (hasTraceSpans || wasPending) {
+          // This is a resumed execution or already completed - update with final status
+          logger.info(`[${requestId}] Updating ${wasPending ? 'pending' : 'completed'} log with final result`, {
             executionId,
-            traceSpansCount: result.traceSpans.length,
+            traceSpansCount: result.traceSpans?.length || 0,
+            wasPending,
           })
           
           await loggingSession.safeComplete({
             endedAt: new Date().toISOString(),
             totalDurationMs: result.metadata?.duration || result.totalDuration || 0,
             finalOutput: result.output || {},
-            traceSpans: result.traceSpans,
+            traceSpans: result.traceSpans || [],
           })
         } else {
           // Log already completed and no new trace spans - skip
