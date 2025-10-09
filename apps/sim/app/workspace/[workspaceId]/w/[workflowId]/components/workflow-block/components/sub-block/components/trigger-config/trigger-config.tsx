@@ -6,6 +6,7 @@ import { createLogger } from '@/lib/logs/console/logger'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/hooks/use-sub-block-value'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { getTrigger } from '@/triggers'
+import { normalizeTwilioVoiceConfig } from '@/triggers/twilio_voice/webhook'
 import { TriggerModal } from './components/trigger-modal'
 
 const logger = createLogger('TriggerConfig')
@@ -87,7 +88,17 @@ export function TriggerConfig({
             }
 
             if (webhook.providerConfig) {
-              setTriggerConfig(webhook.providerConfig)
+              // Normalize config for twilio_voice to only include valid fields
+              let configToSet = webhook.providerConfig
+              if (webhook.provider === 'twilio_voice') {
+                configToSet = normalizeTwilioVoiceConfig(webhook.providerConfig)
+                logger.info('Normalized Twilio Voice config, removed invalid fields', {
+                  blockId,
+                  originalKeys: Object.keys(webhook.providerConfig),
+                  normalizedKeys: Object.keys(configToSet),
+                })
+              }
+              setTriggerConfig(configToSet)
             }
           } else {
             setTriggerId(null)
@@ -398,19 +409,27 @@ export function TriggerConfig({
         </Button>
       )}
 
-      {isModalOpen && triggerDef && (
-        <TriggerModal
-          isOpen={isModalOpen}
-          onClose={handleCloseModal}
-          triggerPath={triggerPath || ''}
-          triggerDef={triggerDef}
-          triggerConfig={triggerConfig || {}}
-          onSave={handleSaveTrigger}
-          onDelete={handleDeleteTrigger}
-          triggerId={triggerId || undefined}
-          blockId={blockId}
-        />
-      )}
+      {isModalOpen && triggerDef && (() => {
+        // Normalize config for twilio_voice before passing to modal
+        let configForModal = triggerConfig || {}
+        if (triggerDef.provider === 'twilio_voice') {
+          configForModal = normalizeTwilioVoiceConfig(configForModal)
+        }
+        
+        return (
+          <TriggerModal
+            isOpen={isModalOpen}
+            onClose={handleCloseModal}
+            triggerPath={triggerPath || ''}
+            triggerDef={triggerDef}
+            triggerConfig={configForModal}
+            onSave={handleSaveTrigger}
+            onDelete={handleDeleteTrigger}
+            triggerId={triggerId || undefined}
+            blockId={blockId}
+          />
+        )
+      })()}
     </div>
   )
 }

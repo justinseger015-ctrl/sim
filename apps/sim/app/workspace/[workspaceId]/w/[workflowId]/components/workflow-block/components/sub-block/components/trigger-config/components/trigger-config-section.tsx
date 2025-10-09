@@ -156,7 +156,7 @@ export function TriggerConfigSection({
               <PopoverContent className='w-[400px] p-0' align='start'>
                 <Command className='outline-none focus:outline-none'>
                   <CommandInput
-                    placeholder={`Search ${fieldDef.label.toLowerCase()}...`}
+                    placeholder={`Search ${(fieldDef.label || 'options').toLowerCase()}...`}
                     className='text-foreground placeholder:text-muted-foreground'
                   />
                   <CommandList
@@ -266,6 +266,11 @@ export function TriggerConfigSection({
                   'focus-visible:ring-2 focus-visible:ring-primary/20',
                   !isSecret && 'text-transparent caret-foreground'
                 )}
+                // Prevent browser credential autofill heuristics
+                autoComplete={isSecret ? 'new-password' : 'off'}
+                name={`trigger-${blockId}-${fieldId}`}
+                data-lpignore='true'
+                data-1p-ignore='true'
               />
               {!isSecret && (
                 <div className='pointer-events-none absolute inset-0 flex items-center overflow-hidden bg-transparent px-3 text-sm'>
