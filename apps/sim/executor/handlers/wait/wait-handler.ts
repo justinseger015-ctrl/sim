@@ -230,6 +230,11 @@ export class WaitBlockHandler implements BlockHandler {
           waitDuration: 0, // Will be calculated during resume
         }
         
+        // Include content field if it was provided in the original block inputs
+        if (inputs.content) {
+          output.content = inputs.content
+        }
+        
         // Check if this is approval mode or custom mode based on presence of 'approved' field
         if (typeof approved === 'boolean') {
           // Approval mode
@@ -893,6 +898,11 @@ export class WaitBlockHandler implements BlockHandler {
           waitDuration: 0, // Not yet approved/completed
         }
         
+        // Include content field if provided (already resolved via resolveBlockInputs)
+        if (inputs.content) {
+          output.content = inputs.content
+        }
+        
         if (humanOperation === 'approval') {
           // Approval mode: include approved status
           output.approved = false
@@ -948,11 +958,18 @@ export class WaitBlockHandler implements BlockHandler {
             }
           }
           
-          return {
+          const mockOutput: any = {
             resumeUrl: 'mock://resume-url',
             approved: mockData?.approved || false,
             ...mockData, // Include other fields from mock data
           }
+          
+          // Include content field if provided
+          if (inputs.content) {
+            mockOutput.content = inputs.content
+          }
+          
+          return mockOutput
         }
 
         const baseUrl = getBaseUrl()
@@ -989,15 +1006,20 @@ export class WaitBlockHandler implements BlockHandler {
           const hasCustomResponse = (inputs.apiResponseMode === 'json' && inputs.apiEditorResponse) ||
                                     (inputs.apiResponseMode === 'structured' && inputs.apiBuilderResponse)
           
-          if (hasCustomResponse && Object.keys(responseData).length > 0) {
-            return responseData
+          const output: any = hasCustomResponse && Object.keys(responseData).length > 0
+            ? responseData
+            : {
+                resumeUrl,
+                waitDuration: 0, // Not yet resumed
+                ...responseData,
+              }
+          
+          // Include content field if provided
+          if (inputs.content) {
+            output.content = inputs.content
           }
           
-          return {
-            resumeUrl,
-            waitDuration: 0, // Not yet resumed
-            ...responseData,
-          }
+          return output
         }
 
         // Save execution state to database and generate API resume URL
@@ -1123,17 +1145,22 @@ export class WaitBlockHandler implements BlockHandler {
         const hasCustomResponse = (inputs.apiResponseMode === 'json' && inputs.apiEditorResponse) ||
                                   (inputs.apiResponseMode === 'structured' && inputs.apiBuilderResponse)
         
-        const responseBody = hasCustomResponse && Object.keys(responseData).length > 0
+        const baseOutput: any = hasCustomResponse && Object.keys(responseData).length > 0
           ? responseData
           : {
               resumeUrl,
               ...responseData,
             }
         
+        // Include content field if provided
+        if (inputs.content) {
+          baseOutput.content = inputs.content
+        }
+        
         // Return as 'apiResponse' so the execute route knows to handle it like Response block
         return {
           apiResponse: {
-            data: responseBody,
+            data: baseOutput,
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           },
@@ -1167,10 +1194,17 @@ export class WaitBlockHandler implements BlockHandler {
             }
           }
           
-          return {
+          const mockOutput: any = {
             webhook: mockData || {},
             status: 'approved',
           }
+          
+          // Include content field if provided
+          if (inputs.content) {
+            mockOutput.content = inputs.content
+          }
+          
+          return mockOutput
         }
 
         logger.info('User approval block entering sleep mode via Redis', {

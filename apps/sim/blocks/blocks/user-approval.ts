@@ -76,6 +76,15 @@ export const UserApprovalBlock: BlockConfig = {
       description: 'Configure a tool to send the approval link notification',
       condition: { field: 'resumeTriggerType', value: 'human' },
     },
+    // Content to evaluate
+    {
+      id: 'content',
+      title: 'Content',
+      type: 'long-input',
+      layout: 'full',
+      description: 'Structure what you want to evaluate. Reference variables and format the information for human review. You can reference previous block outputs and format the information for easy review.',
+      condition: { field: 'resumeTriggerType', value: 'human' },
+    },
     // API input format configuration
     {
       id: 'apiInputFormat',
@@ -286,6 +295,10 @@ export const UserApprovalBlock: BlockConfig = {
       type: 'json',
       description: 'Tool configuration for sending approval notifications',
     },
+    content: {
+      type: 'string',
+      description: 'Content to display to the approver for evaluation',
+    },
     apiInputFormat: {
       type: 'json',
       description: 'Input schema for API resume type',
@@ -315,6 +328,10 @@ export const UserApprovalBlock: BlockConfig = {
     approveUrl: {
       type: 'string',
       description: 'One-time approval URL (Human mode)',
+    },
+    content: {
+      type: 'string',
+      description: 'Content displayed to the approver for evaluation',
     },
     resumeUrl: {
       type: 'string',

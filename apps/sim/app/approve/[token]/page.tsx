@@ -98,10 +98,10 @@ function ApprovalControls({
 
       {isCustomForm ? (
         // Custom Form Mode
-        <form onSubmit={onSubmit} className="space-y-4">
-          <div className="space-y-3">
+        <form onSubmit={onSubmit} className="space-y-4 min-w-0">
+          <div className="space-y-3 min-w-0">
               {details.humanInputFormat?.map((field) => (
-                <div key={field.id} className="space-y-2">
+                <div key={field.id} className="space-y-2 min-w-0">
                   <Label htmlFor={field.name} className="text-sm font-medium">
                     {field.name}
                     {field.required && <span className="ml-1 text-destructive">*</span>}
@@ -113,7 +113,7 @@ function ApprovalControls({
                         setFormData({ ...formData, [field.name]: value === 'true' })
                       }
                     >
-                      <SelectTrigger>
+                      <SelectTrigger className="w-full">
                         <SelectValue placeholder="Select..." />
                       </SelectTrigger>
                       <SelectContent>
@@ -131,6 +131,7 @@ function ApprovalControls({
                         setFormData({ ...formData, [field.name]: Number(e.target.value) })
                       }
                       required={field.required}
+                      className="w-full"
                     />
                   ) : field.type === 'object' || field.type === 'array' ? (
                     <Textarea
@@ -146,7 +147,7 @@ function ApprovalControls({
                         }
                       }}
                       required={field.required}
-                      className="min-h-[80px] font-mono text-sm"
+                      className="min-h-[80px] w-full font-mono text-sm break-words"
                     />
                   ) : (
                     <Input
@@ -158,28 +159,50 @@ function ApprovalControls({
                         setFormData({ ...formData, [field.name]: e.target.value })
                       }
                       required={field.required}
+                      className="w-full"
                     />
                   )}
                 </div>
               ))}
             </div>
-            <Button
-              type="submit"
-              disabled={submitting}
-              className="w-full"
-            >
-              {submitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Submitting...
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="mr-2 h-4 w-4" />
-                  Submit
-                </>
-              )}
-            </Button>
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                onClick={onReject}
+                disabled={submitting}
+                variant="outline"
+                className="border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <XCircle className="mr-2 h-4 w-4" />
+                    Cancel
+                  </>
+                )}
+              </Button>
+              <Button
+                type="submit"
+                disabled={submitting}
+                className="flex-1"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Submitting...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                    Submit
+                  </>
+                )}
+              </Button>
+            </div>
           </form>
         ) : (
           // Approval Mode
@@ -238,8 +261,10 @@ export default function ApprovalPage() {
   const [result, setResult] = useState<'approve' | 'reject' | null>(null)
   const [alreadyUsed, setAlreadyUsed] = useState(false)
   const [formData, setFormData] = useState<Record<string, any>>({})
+  const [leftPanelWidth, setLeftPanelWidth] = useState(400)
   const [rightPanelWidth, setRightPanelWidth] = useState(520)
-  const [isDragging, setIsDragging] = useState(false)
+  const [isLeftDragging, setIsLeftDragging] = useState(false)
+  const [isRightDragging, setIsRightDragging] = useState(false)
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null)
   const [approvalSectionHeight, setApprovalSectionHeight] = useState(() => {
     // Initialize with 60% of viewport height
@@ -251,9 +276,50 @@ export default function ApprovalPage() {
   })
   const [isVerticalDragging, setIsVerticalDragging] = useState(false)
 
-  // Handle horizontal panel resize with RAF for smooth performance
+  // Handle left panel resize
   useEffect(() => {
-    if (!isDragging) return
+    if (!isLeftDragging) return
+
+    let rafId: number | null = null
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (rafId) return
+      
+      rafId = requestAnimationFrame(() => {
+        const newWidth = e.clientX
+        const minWidth = 300
+        const maxWidth = 600
+        setLeftPanelWidth(Math.min(Math.max(newWidth, minWidth), maxWidth))
+        rafId = null
+      })
+    }
+
+    const handleMouseUp = () => {
+      if (rafId) {
+        cancelAnimationFrame(rafId)
+      }
+      setIsLeftDragging(false)
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      if (rafId) {
+        cancelAnimationFrame(rafId)
+      }
+    }
+  }, [isLeftDragging])
+
+  // Handle right panel resize with RAF for smooth performance
+  useEffect(() => {
+    if (!isRightDragging) return
 
     let rafId: number | null = null
 
@@ -273,7 +339,7 @@ export default function ApprovalPage() {
       if (rafId) {
         cancelAnimationFrame(rafId)
       }
-      setIsDragging(false)
+      setIsRightDragging(false)
     }
 
     document.addEventListener('mousemove', handleMouseMove)
@@ -290,7 +356,7 @@ export default function ApprovalPage() {
         cancelAnimationFrame(rafId)
       }
     }
-  }, [isDragging])
+  }, [isRightDragging])
 
   // Handle vertical resize for approval section
   useEffect(() => {
@@ -558,9 +624,74 @@ export default function ApprovalPage() {
       <ApprovalHeader workflowName={details?.workflowName} />
       
       {/* Main Content */}
-      <div className="flex flex-1 overflow-hidden" style={{ height: 'calc(100vh - 48px)' }}>
-        {/* Left Side: Frozen Canvas */}
-        <div className="min-h-0 flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden min-w-0" style={{ height: 'calc(100vh - 48px)' }}>
+        {/* Left Panel: Content to Evaluate */}
+        <div 
+          className="flex flex-col overflow-hidden border-r bg-card min-w-0"
+          style={{ width: `${leftPanelWidth}px` }}
+        >
+          <div className="border-b px-4 py-3">
+            <h3 className="text-sm font-semibold text-foreground">Content to Evaluate</h3>
+          </div>
+          <ScrollArea className="flex-1 min-w-0">
+            <div className="p-4 min-w-0">
+              {executionData?.workflowState?.blocks && (() => {
+                // Find the HITL block
+                const hitlBlock = Object.entries(executionData.workflowState.blocks).find(
+                  ([_, block]: [string, any]) => block.type === 'user_approval'
+                )
+                
+                if (hitlBlock) {
+                  const [blockId, block] = hitlBlock as [string, any]
+                  // Find the execution data for this block
+                  const blockExecution = findTraceSpanByBlockId(
+                    executionData.traceSpans,
+                    blockId
+                  )
+                  
+                  // Get content from output or subBlocks (subBlocks stores as {id, type, value})
+                  let content = blockExecution?.output?.content
+                  if (!content && block.subBlocks?.content) {
+                    content = typeof block.subBlocks.content === 'object' 
+                      ? block.subBlocks.content.value 
+                      : block.subBlocks.content
+                  }
+                  
+                  if (content && typeof content === 'string') {
+                    return (
+                      <div className="max-w-full whitespace-pre-wrap break-all overflow-x-auto overflow-wrap-anywhere text-sm text-foreground">
+                        {content}
+                      </div>
+                    )
+                  }
+                }
+                
+                return (
+                  <p className="text-sm text-muted-foreground italic">
+                    No content provided for evaluation
+                  </p>
+                )
+              })()}
+            </div>
+          </ScrollArea>
+        </div>
+
+        {/* Left Resize Handle */}
+        <div
+          className={cn(
+            "group relative w-1 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30",
+            isLeftDragging && "bg-primary/50"
+          )}
+          onMouseDown={(e) => {
+            e.preventDefault()
+            setIsLeftDragging(true)
+          }}
+        >
+          <div className="absolute inset-y-0 -left-2 -right-2" />
+        </div>
+
+        {/* Center: Frozen Canvas */}
+        <div className="min-h-0 flex-1 overflow-hidden min-w-0">
           <FrozenCanvas
             executionId={details!.executionId}
             traceSpans={executionData?.traceSpans}
@@ -570,15 +701,15 @@ export default function ApprovalPage() {
           />
         </div>
 
-        {/* Resize Handle */}
+        {/* Right Resize Handle */}
         <div
           className={cn(
             "group relative w-1 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30",
-            isDragging && "bg-primary/50"
+            isRightDragging && "bg-primary/50"
           )}
           onMouseDown={(e) => {
             e.preventDefault()
-            setIsDragging(true)
+            setIsRightDragging(true)
           }}
         >
           <div className="absolute inset-y-0 -left-2 -right-2" />
@@ -586,7 +717,7 @@ export default function ApprovalPage() {
 
         {/* Right Side: Execution Details & Controls */}
         <div 
-          className="right-panel-container flex flex-col overflow-hidden border-l"
+          className="right-panel-container flex flex-col overflow-hidden border-l min-w-0"
           style={{ width: `${rightPanelWidth}px` }}
         >
           <div 
@@ -641,7 +772,7 @@ export default function ApprovalPage() {
                               {blockExecution.input && (
                                 <div className="space-y-2 min-w-0">
                                   <p className="text-xs font-medium text-muted-foreground">Input</p>
-                                  <pre className="rounded-md bg-muted p-3 text-xs overflow-x-auto overflow-y-auto max-h-48 w-full break-words whitespace-pre-wrap">
+                                  <pre className="rounded-md bg-muted p-3 text-xs overflow-x-auto overflow-y-auto max-h-48 w-full max-w-full whitespace-pre-wrap break-all overflow-wrap-anywhere">
                                     {JSON.stringify(blockExecution.input, null, 2)}
                                   </pre>
                                 </div>
@@ -650,7 +781,7 @@ export default function ApprovalPage() {
                               {blockExecution.output && (
                                 <div className="space-y-2 min-w-0">
                                   <p className="text-xs font-medium text-muted-foreground">Output</p>
-                                  <pre className="rounded-md bg-muted p-3 text-xs overflow-x-auto overflow-y-auto max-h-48 w-full break-words whitespace-pre-wrap">
+                                  <pre className="rounded-md bg-muted p-3 text-xs overflow-x-auto overflow-y-auto max-h-48 w-full max-w-full whitespace-pre-wrap break-all overflow-wrap-anywhere">
                                     {JSON.stringify(blockExecution.output, null, 2)}
                                   </pre>
                                 </div>
@@ -693,7 +824,7 @@ export default function ApprovalPage() {
             style={{ height: `${approvalSectionHeight}px` }}
           >
             <ScrollArea className="h-full">
-              <div className="p-6">
+              <div className="p-6 min-w-0">
                 <ApprovalControls
                   details={details!}
                   submitting={submitting}
