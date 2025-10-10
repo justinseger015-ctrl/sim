@@ -46,6 +46,7 @@ export type SubBlockType =
   | 'oauth-input' // OAuth credential selector
   | 'webhook-config' // Webhook configuration
   | 'trigger-config' // Trigger configuration
+  | 'webhook-resume-config' // Webhook resume configuration for HITL
   | 'schedule-config' // Schedule status and information
   | 'wait-status' // Wait block status and resume controls
   | 'file-selector' // File selector for Google Drive, etc.

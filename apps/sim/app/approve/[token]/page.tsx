@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { CheckCircle2, XCircle, Loader2, AlertCircle, Workflow } from 'lucide-react'
+import { XCircle, Loader2, AlertCircle, Workflow, ArrowRightCircle, CheckCircle2 } from 'lucide-react'
 import { FrozenCanvas } from '@/app/workspace/[workspaceId]/logs/components/frozen-canvas/frozen-canvas'
 import { TraceSpansDisplay } from '@/app/workspace/[workspaceId]/logs/components/trace-spans/trace-spans-display'
 import { cn } from '@/lib/utils'
@@ -68,23 +68,28 @@ function ApprovalHeader({ workflowName }: { workflowName?: string }) {
 function ApprovalControls({
   details,
   submitting,
+  submittingAction,
   error,
   formData,
   setFormData,
   onSubmit,
   onApprove,
   onReject,
+  result,
 }: {
   details: ApprovalDetails
   submitting: boolean
+  submittingAction: 'approve' | 'reject' | null
   error: string | null
   formData: Record<string, any>
   setFormData: (data: Record<string, any>) => void
   onSubmit: (e: React.FormEvent) => void
   onApprove: () => void
   onReject: () => void
+  result: 'approve' | 'reject' | null
 }) {
   const isCustomForm = details?.humanOperation === 'custom' && details?.humanInputFormat
+  const isDisabled = submitting || !!result
 
   return (
     <div className="space-y-4">
@@ -112,6 +117,7 @@ function ApprovalControls({
                       onValueChange={(value) =>
                         setFormData({ ...formData, [field.name]: value === 'true' })
                       }
+                      disabled={isDisabled}
                     >
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="Select..." />
@@ -131,6 +137,7 @@ function ApprovalControls({
                         setFormData({ ...formData, [field.name]: Number(e.target.value) })
                       }
                       required={field.required}
+                      disabled={isDisabled}
                       className="w-full"
                     />
                   ) : field.type === 'object' || field.type === 'array' ? (
@@ -147,6 +154,7 @@ function ApprovalControls({
                         }
                       }}
                       required={field.required}
+                      disabled={isDisabled}
                       className="min-h-[80px] w-full font-mono text-sm break-words"
                     />
                   ) : (
@@ -159,6 +167,7 @@ function ApprovalControls({
                         setFormData({ ...formData, [field.name]: e.target.value })
                       }
                       required={field.required}
+                      disabled={isDisabled}
                       className="w-full"
                     />
                   )}
@@ -169,36 +178,36 @@ function ApprovalControls({
               <Button
                 type="button"
                 onClick={onReject}
-                disabled={submitting}
+                disabled={isDisabled}
                 variant="outline"
-                className="border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                className="border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground disabled:opacity-50"
               >
-                {submitting ? (
+                {submittingAction === 'reject' ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Processing...
                   </>
                 ) : (
                   <>
-                    <XCircle className="mr-2 h-4 w-4" />
                     Cancel
+                    <XCircle className="ml-1 h-4 w-4" />
                   </>
                 )}
               </Button>
               <Button
                 type="submit"
-                disabled={submitting}
-                className="flex-1"
+                disabled={isDisabled}
+                className="flex-1 bg-[var(--brand-primary-hover-hex)] hover:bg-[var(--brand-primary-hover-hex)]/90 disabled:opacity-50"
               >
-                {submitting ? (
+                {submittingAction === 'approve' ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Submitting...
                   </>
                 ) : (
                   <>
-                    <CheckCircle2 className="mr-2 h-4 w-4" />
-                    Submit
+                    Continue
+                    <ArrowRightCircle className="ml-1 h-4 w-4" />
                   </>
                 )}
               </Button>
@@ -209,36 +218,36 @@ function ApprovalControls({
           <div className="flex gap-3">
             <Button
               onClick={onReject}
-              disabled={submitting}
+              disabled={isDisabled}
               variant="outline"
-              className="flex-1 border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+              className="flex-1 border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground disabled:opacity-50"
             >
-              {submitting ? (
+              {submittingAction === 'reject' ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Processing...
                 </>
               ) : (
                 <>
-                  <XCircle className="mr-2 h-4 w-4" />
                   Reject
+                  <XCircle className="ml-1 h-4 w-4" />
                 </>
               )}
             </Button>
             <Button
               onClick={onApprove}
-              disabled={submitting}
-              className="flex-1 bg-green-600 hover:bg-green-700"
+              disabled={isDisabled}
+              className="flex-1 bg-[var(--brand-primary-hover-hex)] hover:bg-[var(--brand-primary-hover-hex)]/90 disabled:opacity-50"
             >
-              {submitting ? (
+              {submittingAction === 'approve' ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Processing...
                 </>
               ) : (
                 <>
-                  <CheckCircle2 className="mr-2 h-4 w-4" />
-                  Approve
+                  Continue
+                  <ArrowRightCircle className="ml-1 h-4 w-4" />
                 </>
               )}
             </Button>
@@ -255,6 +264,7 @@ export default function ApprovalPage() {
 
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [submittingAction, setSubmittingAction] = useState<'approve' | 'reject' | null>(null)
   const [details, setDetails] = useState<ApprovalDetails | null>(null)
   const [executionData, setExecutionData] = useState<ExecutionData | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -266,16 +276,28 @@ export default function ApprovalPage() {
   const [isLeftDragging, setIsLeftDragging] = useState(false)
   const [isRightDragging, setIsRightDragging] = useState(false)
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null)
-  const [approvalSectionHeight, setApprovalSectionHeight] = useState(() => {
-    // Initialize with 60% of viewport height
-    if (typeof window !== 'undefined') {
-      const viewportHeight = window.innerHeight - 48 // Subtract header height
-      return viewportHeight * 0.6
-    }
-    return 400
-  })
+  const [approvalSectionHeight, setApprovalSectionHeight] = useState(200)
   const [isVerticalDragging, setIsVerticalDragging] = useState(false)
-
+  
+  // Calculate initial approval section height based on content
+  useEffect(() => {
+    if (details) {
+      // Simple approval mode needs less space than custom form
+      const isCustomForm = details.humanOperation === 'custom' && details.humanInputFormat
+      
+      if (isCustomForm && details.humanInputFormat) {
+        // Calculate height based on number of form fields
+        const fieldCount = details.humanInputFormat.length
+        // Base height (header + padding + buttons) + height per field
+        const calculatedHeight = 140 + (fieldCount * 90)
+        setApprovalSectionHeight(Math.min(calculatedHeight, 500))
+      } else {
+        // Approval mode: header + padding + error space + buttons
+        setApprovalSectionHeight(180)
+      }
+    }
+  }, [details])
+  
   // Handle left panel resize
   useEffect(() => {
     if (!isLeftDragging) return
@@ -373,7 +395,7 @@ export default function ApprovalPage() {
         
         const containerRect = container.getBoundingClientRect()
         const newHeight = containerRect.bottom - e.clientY
-        const minHeight = 200
+        const minHeight = 120
         const maxHeight = containerRect.height - 200
         setApprovalSectionHeight(Math.min(Math.max(newHeight, minHeight), maxHeight))
         rafId = null
@@ -413,26 +435,32 @@ export default function ApprovalPage() {
         if (response.status === 410 && data.alreadyUsed) {
           setAlreadyUsed(true)
           setError(data.error)
+          setLoading(false) // Stop loading immediately for error page
+          return
         } else if (!response.ok) {
           setError(data.error || 'Failed to load approval details')
-        } else {
-          setDetails(data)
-          
-          // Fetch execution logs/trace spans
-          try {
-            const logsResponse = await fetch(`/api/logs/execution/${data.executionId}`)
-            if (logsResponse.ok) {
-              const logsData = await logsResponse.json()
-              setExecutionData(logsData)
-            }
-          } catch (logsError) {
-            console.error('Failed to load execution logs:', logsError)
-            // Non-fatal, continue without logs
-          }
+          setLoading(false) // Stop loading immediately for error page
+          return
         }
+        
+        // Valid approval request - set details and continue loading
+        setDetails(data)
+        
+        // Fetch execution logs/trace spans
+        try {
+          const logsResponse = await fetch(`/api/logs/execution/${data.executionId}`)
+          if (logsResponse.ok) {
+            const logsData = await logsResponse.json()
+            setExecutionData(logsData)
+          }
+        } catch (logsError) {
+          console.error('Failed to load execution logs:', logsError)
+          // Non-fatal, continue without logs
+        }
+        
+        setLoading(false)
       } catch (err) {
         setError('Failed to connect to server')
-      } finally {
         setLoading(false)
       }
     }
@@ -442,6 +470,7 @@ export default function ApprovalPage() {
 
   const handleAction = async (action: 'approve' | 'reject', customData?: Record<string, any>) => {
     setSubmitting(true)
+    setSubmittingAction(action)
     setError(null)
 
     try {
@@ -464,12 +493,15 @@ export default function ApprovalPage() {
       } else if (!response.ok) {
         setError(data.error || 'Failed to process action')
       } else {
+        // Success - keep page as is, just set result for tracking
         setResult(action)
+        // Page stays open, user can see what they just did
       }
     } catch (err) {
       setError('Failed to connect to server')
     } finally {
       setSubmitting(false)
+      setSubmittingAction(null)
     }
   }
 
@@ -508,19 +540,15 @@ export default function ApprovalPage() {
     return null
   }
 
+  // Show simple loading screen while checking link validity
   if (loading) {
     return (
-      <div className="flex min-h-screen flex-col bg-background">
-        <ApprovalHeader />
-        <div className="flex flex-1 items-center justify-center p-4">
-          <Card className="flex flex-col items-center justify-center border-none p-12 shadow-lg">
-            <div className="relative mb-6">
-              <div className="absolute inset-0 animate-pulse rounded-full bg-primary/20 blur-xl" />
-              <Loader2 className="relative h-12 w-12 animate-spin text-primary" />
-            </div>
-            <p className="text-lg font-medium text-foreground">Loading approval request</p>
-            <p className="mt-2 text-sm text-muted-foreground">Please wait...</p>
-          </Card>
+      <div className="min-h-screen bg-white">
+        <div className="flex min-h-screen items-center justify-center px-4">
+          <div className="flex items-center gap-3 text-muted-foreground">
+            <Loader2 className="h-6 w-6 animate-spin" />
+            <span className="text-[16px] font-[380]">Loading...</span>
+          </div>
         </div>
       </div>
     )
@@ -528,23 +556,30 @@ export default function ApprovalPage() {
 
   if (alreadyUsed) {
     return (
-      <div className="flex min-h-screen flex-col bg-background">
-        <ApprovalHeader />
-        <div className="flex flex-1 items-center justify-center p-4">
-          <Card className="w-full max-w-lg border-none p-8 shadow-lg">
-            <div className="flex flex-col items-center text-center">
-              <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-yellow-500/10">
-                <AlertCircle className="h-8 w-8 text-yellow-500" />
+      <div className="min-h-screen bg-white">
+        <div className="flex min-h-screen items-center justify-center px-4">
+          <div className="w-full max-w-[410px]">
+            <div className="flex flex-col items-center justify-center">
+              <div className="space-y-1 text-center">
+                <h1 className="font-medium text-[32px] text-black tracking-tight">
+                  Link Already Used
+                </h1>
+                <p className="font-[380] text-[16px] text-muted-foreground">
+                  This approval link has already been processed. Each link can only be used once for security.
+                </p>
               </div>
-              <h1 className="mb-3 text-2xl font-semibold">Link Already Used</h1>
-              <p className="mb-6 text-muted-foreground">
-                This approval link has already been used and cannot be used again.
-              </p>
-              <Button onClick={() => router.push('/')} size="lg" className="w-full">
-                Return to Home
-              </Button>
+
+              <div className="mt-8 w-full space-y-3">
+                <Button
+                  type="button"
+                  onClick={() => router.push('/')}
+                  className="flex w-full items-center justify-center gap-2 rounded-[10px] border bg-[var(--brand-primary-hover-hex)] hover:bg-[var(--brand-primary-hover-hex)]/90 font-medium text-[15px] text-white transition-all duration-200"
+                >
+                  Return to Home
+                </Button>
+              </div>
             </div>
-          </Card>
+          </div>
         </div>
       </div>
     )
@@ -552,68 +587,30 @@ export default function ApprovalPage() {
 
   if (error && !details) {
     return (
-      <div className="flex min-h-screen flex-col bg-background">
-        <ApprovalHeader />
-        <div className="flex flex-1 items-center justify-center p-4">
-          <Card className="w-full max-w-lg border-none p-8 shadow-lg">
-            <div className="flex flex-col items-center text-center">
-              <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
-                <XCircle className="h-8 w-8 text-destructive" />
+      <div className="min-h-screen bg-white">
+        <div className="flex min-h-screen items-center justify-center px-4">
+          <div className="w-full max-w-[410px]">
+            <div className="flex flex-col items-center justify-center">
+              <div className="space-y-1 text-center">
+                <h1 className="font-medium text-[32px] text-black tracking-tight">
+                  Unable to Load Request
+                </h1>
+                <p className="font-[380] text-[16px] text-muted-foreground">
+                  {error}
+                </p>
               </div>
-              <h1 className="mb-3 text-2xl font-semibold">Unable to Load Request</h1>
-              <p className="mb-6 text-muted-foreground">{error}</p>
-              <Button onClick={() => router.push('/')} size="lg" className="w-full">
-                Return to Home
-              </Button>
-            </div>
-          </Card>
-        </div>
-      </div>
-    )
-  }
 
-  if (result) {
-    const isApproved = result === 'approve'
-    return (
-      <div className="flex min-h-screen flex-col bg-background">
-        <ApprovalHeader workflowName={details?.workflowName} />
-        <div className="flex flex-1 items-center justify-center p-4">
-          <Card className="w-full max-w-lg border-none p-8 shadow-lg">
-            <div className="flex flex-col items-center text-center">
-              <div className={cn(
-                "mb-6 flex h-20 w-20 items-center justify-center rounded-full",
-                isApproved ? 'bg-green-500/10' : 'bg-red-500/10'
-              )}>
-                {isApproved ? (
-                  <CheckCircle2 className="h-10 w-10 text-green-500" />
-                ) : (
-                  <XCircle className="h-10 w-10 text-red-500" />
-                )}
+              <div className="mt-8 w-full space-y-3">
+                <Button
+                  type="button"
+                  onClick={() => router.push('/')}
+                  className="flex w-full items-center justify-center gap-2 rounded-[10px] border bg-[var(--brand-primary-hover-hex)] hover:bg-[var(--brand-primary-hover-hex)]/90 font-medium text-[15px] text-white transition-all duration-200"
+                >
+                  Return to Home
+                </Button>
               </div>
-              <h1 className="mb-3 text-3xl font-semibold">
-                {isApproved ? 'Request Approved' : 'Request Rejected'}
-              </h1>
-              <p className="mb-8 text-muted-foreground">
-                {isApproved
-                  ? 'The workflow has been approved and will continue execution.'
-                  : 'The workflow has been rejected and execution has been stopped.'}
-              </p>
-              <div className="mb-8 w-full space-y-3 rounded-lg border bg-muted/30 p-6 text-left">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Workflow Name</p>
-                  <p className="text-base font-medium">{details?.workflowName}</p>
-                </div>
-                <div className="h-px bg-border" />
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Execution ID</p>
-                  <p className="font-mono text-xs">{details?.executionId}</p>
-                </div>
-              </div>
-              <Button onClick={() => router.push('/')} size="lg" className="w-full">
-                Return to Home
-              </Button>
             </div>
-          </Card>
+          </div>
         </div>
       </div>
     )
@@ -623,112 +620,41 @@ export default function ApprovalPage() {
     <div className="flex h-screen flex-col bg-background">
       <ApprovalHeader workflowName={details?.workflowName} />
       
+      {/* Success Banner */}
+      {result && (
+        <div className={cn(
+          "px-6 py-3 text-center font-medium text-white",
+          result === 'approve' 
+            ? 'bg-[var(--brand-primary-hover-hex)]' 
+            : 'bg-destructive'
+        )}>
+          {result === 'approve' 
+            ? '✓ Request approved - workflow will continue execution' 
+            : '✗ Request rejected - workflow execution stopped'}
+        </div>
+      )}
+      
       {/* Main Content */}
-      <div className="flex flex-1 overflow-hidden min-w-0" style={{ height: 'calc(100vh - 48px)' }}>
-        {/* Left Panel: Content to Evaluate */}
+      <div className="flex flex-1 overflow-hidden min-w-0" style={{ height: result ? 'calc(100vh - 96px)' : 'calc(100vh - 48px)' }}>
+        {/* Left Panel: Execution Timeline & Block Details */}
         <div 
           className="flex flex-col overflow-hidden border-r bg-card min-w-0"
           style={{ width: `${leftPanelWidth}px` }}
         >
-          <div className="border-b px-4 py-3">
-            <h3 className="text-sm font-semibold text-foreground">Content to Evaluate</h3>
-          </div>
           <ScrollArea className="flex-1 min-w-0">
-            <div className="p-4 min-w-0">
-              {executionData?.workflowState?.blocks && (() => {
-                // Find the HITL block
-                const hitlBlock = Object.entries(executionData.workflowState.blocks).find(
-                  ([_, block]: [string, any]) => block.type === 'user_approval'
-                )
-                
-                if (hitlBlock) {
-                  const [blockId, block] = hitlBlock as [string, any]
-                  // Find the execution data for this block
-                  const blockExecution = findTraceSpanByBlockId(
-                    executionData.traceSpans,
-                    blockId
-                  )
-                  
-                  // Get content from output or subBlocks (subBlocks stores as {id, type, value})
-                  let content = blockExecution?.output?.content
-                  if (!content && block.subBlocks?.content) {
-                    content = typeof block.subBlocks.content === 'object' 
-                      ? block.subBlocks.content.value 
-                      : block.subBlocks.content
-                  }
-                  
-                  if (content && typeof content === 'string') {
-                    return (
-                      <div className="max-w-full whitespace-pre-wrap break-all overflow-x-auto overflow-wrap-anywhere text-sm text-foreground">
-                        {content}
-                      </div>
-                    )
-                  }
-                }
-                
-                return (
-                  <p className="text-sm text-muted-foreground italic">
-                    No content provided for evaluation
-                  </p>
-                )
-              })()}
-            </div>
-          </ScrollArea>
-        </div>
-
-        {/* Left Resize Handle */}
-        <div
-          className={cn(
-            "group relative w-1 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30",
-            isLeftDragging && "bg-primary/50"
-          )}
-          onMouseDown={(e) => {
-            e.preventDefault()
-            setIsLeftDragging(true)
-          }}
-        >
-          <div className="absolute inset-y-0 -left-2 -right-2" />
-        </div>
-
-        {/* Center: Frozen Canvas */}
-        <div className="min-h-0 flex-1 overflow-hidden min-w-0">
-          <FrozenCanvas
-            executionId={details!.executionId}
-            traceSpans={executionData?.traceSpans}
-            height="100%"
-            width="100%"
-            onBlockClick={setSelectedBlockId}
-            showZoomControls={true}
-          />
-        </div>
-
-        {/* Right Resize Handle */}
-        <div
-          className={cn(
-            "group relative w-1 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30",
-            isRightDragging && "bg-primary/50"
-          )}
-          onMouseDown={(e) => {
-            e.preventDefault()
-            setIsRightDragging(true)
-          }}
-        >
-          <div className="absolute inset-y-0 -left-2 -right-2" />
-        </div>
-
-        {/* Right Side: Execution Details & Controls */}
-        <div 
-          className="right-panel-container flex flex-col overflow-hidden border-l min-w-0"
-          style={{ width: `${rightPanelWidth}px` }}
-        >
-          <div 
-            className="overflow-hidden"
-            style={{ height: `calc(100% - ${approvalSectionHeight}px - 4px)` }}
-          >
-            <ScrollArea className="h-full">
-              <div className="flex flex-col gap-6 p-6 min-w-0">
+            <div className="flex flex-col gap-6 p-6 min-w-0">
               {/* Trace Spans */}
-              {executionData?.traceSpans && executionData.traceSpans.length > 0 ? (
+              {!executionData ? (
+                <div className="min-w-0">
+                  <h3 className="mb-3 text-xs font-semibold text-muted-foreground">
+                    EXECUTION TIMELINE
+                  </h3>
+                  <div className="flex items-center gap-2 text-muted-foreground py-4">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-sm">Loading timeline...</span>
+                  </div>
+                </div>
+              ) : executionData?.traceSpans && executionData.traceSpans.length > 0 ? (
                 <div className="min-w-0">
                   <h3 className="mb-3 text-xs font-semibold text-muted-foreground">
                     EXECUTION TIMELINE
@@ -801,6 +727,123 @@ export default function ApprovalPage() {
                   </Card>
                 </div>
               )}
+            </div>
+          </ScrollArea>
+        </div>
+
+        {/* Left Resize Handle */}
+        <div
+          className={cn(
+            "group relative w-1 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30",
+            isLeftDragging && "bg-primary/50"
+          )}
+          onMouseDown={(e) => {
+            e.preventDefault()
+            setIsLeftDragging(true)
+          }}
+        >
+          <div className="absolute inset-y-0 -left-2 -right-2" />
+        </div>
+
+        {/* Center: Frozen Canvas */}
+        <div className="min-h-0 flex-1 overflow-hidden min-w-0">
+          {details?.executionId ? (
+            <FrozenCanvas
+              executionId={details.executionId}
+              traceSpans={executionData?.traceSpans}
+              height="100%"
+              width="100%"
+              onBlockClick={setSelectedBlockId}
+              showZoomControls={true}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                <span>Loading workflow...</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Right Resize Handle */}
+        <div
+          className={cn(
+            "group relative w-1 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30",
+            isRightDragging && "bg-primary/50"
+          )}
+          onMouseDown={(e) => {
+            e.preventDefault()
+            setIsRightDragging(true)
+          }}
+        >
+          <div className="absolute inset-y-0 -left-2 -right-2" />
+        </div>
+
+        {/* Right Side: Content & Controls */}
+        <div 
+          className="right-panel-container flex flex-col overflow-hidden border-l min-w-0"
+          style={{ width: `${rightPanelWidth}px` }}
+        >
+          {/* Content to Evaluate - Takes remaining space */}
+          <div 
+            className="overflow-hidden"
+            style={{ height: `calc(100% - ${approvalSectionHeight}px - 4px)` }}
+          >
+            <ScrollArea className="h-full">
+              <div className="p-6 min-w-0">
+                {/* Content to Evaluate */}
+                <div className="min-w-0">
+                  <h3 className="mb-3 text-xs font-semibold text-muted-foreground">
+                    CONTENT TO EVALUATE
+                  </h3>
+                  {!executionData ? (
+                    <div className="flex items-center gap-2 text-muted-foreground py-4">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span className="text-sm">Loading...</span>
+                    </div>
+                  ) : executionData?.workflowState?.blocks ? (() => {
+                    // Find the HITL block
+                    const hitlBlock = Object.entries(executionData.workflowState.blocks).find(
+                      ([_, block]: [string, any]) => block.type === 'user_approval'
+                    )
+                    
+                    if (hitlBlock) {
+                      const [blockId, block] = hitlBlock as [string, any]
+                      // Find the execution data for this block
+                      const blockExecution = findTraceSpanByBlockId(
+                        executionData.traceSpans,
+                        blockId
+                      )
+                      
+                      // Get content from output or subBlocks (subBlocks stores as {id, type, value})
+                      let content = blockExecution?.output?.content
+                      if (!content && block.subBlocks?.content) {
+                        content = typeof block.subBlocks.content === 'object' 
+                          ? block.subBlocks.content.value 
+                          : block.subBlocks.content
+                      }
+                      
+                      if (content && typeof content === 'string') {
+                        return (
+                          <div className="max-w-full whitespace-pre-wrap break-all overflow-x-auto overflow-wrap-anywhere text-sm text-foreground rounded-lg border bg-muted/30 p-4">
+                            {content}
+                          </div>
+                        )
+                      }
+                    }
+                    
+                    return (
+                      <p className="text-sm text-muted-foreground italic">
+                        No content provided for evaluation
+                      </p>
+                    )
+                  })() : (
+                    <p className="text-sm text-muted-foreground italic">
+                      No content provided for evaluation
+                    </p>
+                  )}
+                </div>
               </div>
             </ScrollArea>
           </div>
@@ -819,23 +862,35 @@ export default function ApprovalPage() {
             <div className="absolute inset-x-0 -top-2 -bottom-2" />
           </div>
           
-          {/* Approval Controls - Resizable section at bottom of right panel */}
+          {/* Approval Controls - Resizable section */}
           <div 
-            className="border-t bg-card overflow-hidden"
+            className="border-t bg-card overflow-hidden flex flex-col"
             style={{ height: `${approvalSectionHeight}px` }}
           >
-            <ScrollArea className="h-full">
+            <div className="border-b px-4 py-3">
+              <h3 className="text-sm font-semibold text-foreground">Approval</h3>
+            </div>
+            <ScrollArea className="flex-1">
               <div className="p-6 min-w-0">
-                <ApprovalControls
-                  details={details!}
-                  submitting={submitting}
-                  error={error}
-                  formData={formData}
-                  setFormData={setFormData}
-                  onSubmit={handleCustomSubmit}
-                  onApprove={() => handleAction('approve')}
-                  onReject={() => handleAction('reject')}
-                />
+                {!details ? (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-sm">Loading controls...</span>
+                  </div>
+                ) : (
+                  <ApprovalControls
+                    details={details}
+                    submitting={submitting}
+                    submittingAction={submittingAction}
+                    error={error}
+                    formData={formData}
+                    setFormData={setFormData}
+                    onSubmit={handleCustomSubmit}
+                    onApprove={() => handleAction('approve')}
+                    onReject={() => handleAction('reject')}
+                    result={result}
+                  />
+                )}
               </div>
             </ScrollArea>
           </div>

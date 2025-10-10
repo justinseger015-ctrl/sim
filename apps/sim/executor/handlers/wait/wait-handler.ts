@@ -976,8 +976,42 @@ export class WaitBlockHandler implements BlockHandler {
         let resumeUrl = `${baseUrl}/api/workflows/${workflowId}/executions/resume/${executionId}`
         
         // Check if this is a deployed execution
-        // If not deployed, return the configured response without saving to DB
+        // If not deployed, check for test values in apiInputFormat
         if (!context.isDeployedContext) {
+          // Check if apiInputFormat has test values
+          const apiInputFormat = inputs.apiInputFormat
+          let hasTestValues = false
+          const testData: Record<string, any> = {}
+          
+          if (apiInputFormat && Array.isArray(apiInputFormat)) {
+            for (const field of apiInputFormat) {
+              if (field.name && field.value !== undefined && field.value !== null && field.value !== '') {
+                hasTestValues = true
+                testData[field.name] = field.value
+              }
+            }
+          }
+          
+          // If test values are present, use them immediately without pausing
+          if (hasTestValues) {
+            logger.info('API resume type with test values in non-deployed context, using test data', {
+              executionId,
+              workflowId,
+              blockId: block.id,
+              testDataKeys: Object.keys(testData),
+            })
+            
+            // Return the test data as if the API was called
+            const output: any = {
+              resumeUrl,
+              waitDuration: 0,
+              ...testData, // All API input fields with test values
+            }
+            
+            return output
+          }
+          
+          // No test values, pause as usual
           logger.info('API resume type in non-deployed context, pausing without DB save', {
             executionId,
             workflowId,
@@ -1046,6 +1080,8 @@ export class WaitBlockHandler implements BlockHandler {
                 apiResponseMode: inputs.apiResponseMode,
                 apiBuilderResponse: inputs.apiBuilderResponse,
                 apiEditorResponse: inputs.apiEditorResponse,
+                apiStatus: inputs.apiStatus,
+                apiHeaders: inputs.apiHeaders,
               },
               baseUrl
             )
@@ -1090,6 +1126,8 @@ export class WaitBlockHandler implements BlockHandler {
                 apiResponseMode: inputs.apiResponseMode,
                 apiBuilderResponse: inputs.apiBuilderResponse,
                 apiEditorResponse: inputs.apiEditorResponse,
+                apiStatus: inputs.apiStatus,
+                apiHeaders: inputs.apiHeaders,
               }),
             })
 

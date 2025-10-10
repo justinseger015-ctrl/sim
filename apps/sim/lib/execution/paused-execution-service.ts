@@ -22,6 +22,8 @@ export interface SavePausedExecutionParams {
   apiResponseMode?: string  // Response mode for API resume (builder/json)
   apiBuilderResponse?: any  // Builder response structure
   apiEditorResponse?: any  // JSON editor response template
+  apiStatus?: number  // HTTP status code for API resume response
+  apiHeaders?: any  // HTTP headers for API resume response
 }
 
 export interface PausedExecutionResult {
@@ -62,6 +64,8 @@ export class PausedExecutionService {
       apiResponseMode,
       apiBuilderResponse,
       apiEditorResponse,
+      apiStatus,
+      apiHeaders,
     } = params
     let { userId } = params
 
@@ -280,6 +284,8 @@ export class PausedExecutionService {
               apiResponseMode,
               apiBuilderResponse,
               apiEditorResponse,
+              apiStatus,
+              apiHeaders,
             }),
           },
           approvalToken,

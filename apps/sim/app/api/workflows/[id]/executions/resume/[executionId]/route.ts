@@ -525,13 +525,31 @@ export async function POST(
         }
       }
       
+      // Get custom status code and headers if configured
+      const statusCode = metadata?.apiStatus ? parseInt(String(metadata.apiStatus), 10) : 200
+      const customHeaders: Record<string, string> = {}
+      
+      if (metadata?.apiHeaders && Array.isArray(metadata.apiHeaders)) {
+        // Convert table format to header object
+        for (const header of metadata.apiHeaders) {
+          if (header.key && header.value) {
+            customHeaders[header.key] = header.value
+          }
+        }
+      }
+      
       logger.info('Returning custom API response to caller', {
         executionId,
         responseMode: apiResponseMode,
         responseKeys: Object.keys(responseData),
+        statusCode,
+        customHeaders: Object.keys(customHeaders),
       })
       
-      return NextResponse.json(responseData)
+      return NextResponse.json(responseData, {
+        status: statusCode,
+        headers: customHeaders,
+      })
     }
     
     // For non-API resume (webhook, manual), return standard response

@@ -36,6 +36,7 @@ import {
   TriggerConfig,
   WaitStatus,
   WebhookConfig,
+  WebhookResumeConfig,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/components'
 import type { SubBlockConfig } from '@/blocks/types'
 import { DocumentTagEntry } from './components/document-tag-entry/document-tag-entry'
@@ -343,6 +344,16 @@ export function SubBlock({
           />
         )
       }
+      case 'webhook-resume-config':
+        return (
+          <WebhookResumeConfig
+            blockId={blockId}
+            isConnecting={isConnecting}
+            isPreview={isPreview}
+            value={previewValue}
+            disabled={isDisabled}
+          />
+        )
       case 'schedule-config':
         return (
           <ScheduleConfig

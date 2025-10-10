@@ -29,6 +29,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       apiResponseMode,
       apiBuilderResponse,
       apiEditorResponse,
+      apiStatus,
+      apiHeaders,
     } = body
 
     if (!workflowId || !executionId || !blockId) {
@@ -73,6 +75,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         apiResponseMode,
         apiBuilderResponse,
         apiEditorResponse,
+        apiStatus,
+        apiHeaders,
       },
       baseUrl
     )

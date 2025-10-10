@@ -8,15 +8,14 @@ const UserApprovalIcon = (props: SVGProps<SVGSVGElement>) => createElement(UserC
 export const UserApprovalBlock: BlockConfig = {
   type: 'user_approval',
   name: 'Human in the Loop',
-  description: 'Pause workflow and wait for webhook trigger or time delay',
+  description: 'Pause workflow and wait for webhook trigger or human approval',
   longDescription:
-    'Pauses workflow execution for manual approval, API approval, time delay, or webhook trigger. Human mode generates one-time approval links. API mode creates authenticated endpoints for programmatic approval. Time-based waits execute a simple sleep. Webhook waits generate resume URLs with optional notifications. Perfect for human-in-the-loop workflows requiring manual review or external system coordination.',
+    'Pauses workflow execution for manual approval, API approval, or webhook trigger. Human mode generates one-time approval links. API mode creates authenticated endpoints for programmatic approval. Webhook waits generate resume URLs with optional notifications. Perfect for human-in-the-loop workflows requiring manual review or external system coordination.',
   bestPractices: `
-  - Use "Time Interval" for simple delays (max 5 minutes)
   - Use "Human" for one-time approval links (works in both deployed and non-deployed workflows)
   - Use "API" for programmatic approval via authenticated API endpoints (requires workflow to be deployed)
   - Use "Webhook" to pause until an external system triggers resumption
-  - For API mode: Define your input schema and the "approved" field (boolean) will be automatically validated
+  - For API mode: Define your input schema with the fields you want to accept
   - Always set a webhook secret for security when using webhook mode
   - Optionally configure a notification webhook to alert external systems when the workflow pauses
   - Use mock response for client-side testing without triggering real webhooks
@@ -33,10 +32,9 @@ export const UserApprovalBlock: BlockConfig = {
       layout: 'full',
       description: 'Select how this workflow should be resumed after pausing',
       options: [
-        { label: 'Time Interval', id: 'time' },
-        { label: 'Webhook', id: 'webhook' },
         { label: 'Human', id: 'human' },
         { label: 'API', id: 'api' },
+        { label: 'Webhook', id: 'webhook' },
       ],
       value: () => 'human',
     },
@@ -126,7 +124,7 @@ export const UserApprovalBlock: BlockConfig = {
       title: 'Response Data',
       type: 'code',
       layout: 'full',
-      placeholder: '{\n  "approved": "<api.approved>",\n  "customField": "<api.customField>"\n}',
+      placeholder: '',
       language: 'json',
       condition: {
         field: 'resumeTriggerType',
@@ -136,47 +134,40 @@ export const UserApprovalBlock: BlockConfig = {
       description:
         'Define what data this block returns when executed. Use <api.fieldName> to reference API input fields, or <variable.name> for other workflow variables.',
     },
-    // Time interval configuration
     {
-      id: 'timeValue',
-      title: 'Wait Amount',
+      id: 'apiStatus',
+      title: 'Status Code',
       type: 'short-input',
       layout: 'half',
-      description: 'How long to wait (max 5 minutes)',
-      placeholder: '10',
-      value: () => '10',
-      condition: { field: 'resumeTriggerType', value: 'time' },
+      placeholder: '200',
+      description: 'HTTP status code (default: 200)',
+      condition: { field: 'resumeTriggerType', value: 'api' },
     },
     {
-      id: 'timeUnit',
-      title: 'Unit',
-      type: 'dropdown',
-      layout: 'half',
-      options: [
-        { label: 'Seconds', id: 'seconds' },
-        { label: 'Minutes', id: 'minutes' },
-      ],
-      value: () => 'seconds',
-      condition: { field: 'resumeTriggerType', value: 'time' },
-    },
-    // Security
-    {
-      id: 'webhookSecret',
-      title: 'Webhook Secret',
-      type: 'short-input',
+      id: 'apiHeaders',
+      title: 'Response Headers',
+      type: 'table',
       layout: 'full',
-      description: 'Required secret for webhook authentication (X-Sim-Secret header)',
-      placeholder: 'your-secret-key',
-      condition: { field: 'resumeTriggerType', value: 'webhook' },
-      required: true,
+      columns: ['Key', 'Value'],
+      description: 'Additional HTTP headers to include in the response',
+      condition: { field: 'resumeTriggerType', value: 'api' },
     },
-    // Notification webhook (optional)
+    // Webhook resume configuration
+    {
+      id: 'webhookResumeConfig',
+      title: 'Configure Trigger',
+      type: 'webhook-resume-config',
+      layout: 'full',
+      description: 'Configure how external systems can resume this workflow',
+      condition: { field: 'resumeTriggerType', value: 'webhook' },
+    },
+    // Notification webhook configuration section
     {
       id: 'webhookSendUrl',
-      title: 'Notification Webhook URL',
+      title: 'Notification Webhook URL (Optional)',
       type: 'long-input',
       layout: 'full',
-      description: 'Send a notification when workflow pauses (optional)',
+      description: 'Optionally send a notification to an external webhook when the workflow pauses. Configure the URL, method, headers, and body below.',
       placeholder: 'https://example.com/notify',
       condition: { field: 'resumeTriggerType', value: 'webhook' },
     },
@@ -191,16 +182,6 @@ export const UserApprovalBlock: BlockConfig = {
         { label: 'PATCH', id: 'PATCH' },
       ],
       value: () => 'POST',
-      condition: { field: 'resumeTriggerType', value: 'webhook' },
-    },
-    {
-      id: 'webhookSendBody',
-      title: 'Body',
-      type: 'code',
-      layout: 'full',
-      language: 'json',
-      description: 'Use {{resumeUrl}}, {{workflowId}}, {{executionId}} as placeholders',
-      placeholder: '{\n  "resumeUrl": "{{resumeUrl}}"\n}',
       condition: { field: 'resumeTriggerType', value: 'webhook' },
     },
     {
@@ -219,6 +200,16 @@ export const UserApprovalBlock: BlockConfig = {
       columns: ['Key', 'Value'],
       condition: { field: 'resumeTriggerType', value: 'webhook' },
     },
+    {
+      id: 'webhookSendBody',
+      title: 'Body',
+      type: 'code',
+      layout: 'full',
+      language: 'json',
+      description: 'Use {{resumeUrl}}, {{workflowId}}, {{executionId}} as placeholders',
+      placeholder: '',
+      condition: { field: 'resumeTriggerType', value: 'webhook' },
+    },
     // Testing
     {
       id: 'mockResponse',
@@ -227,7 +218,7 @@ export const UserApprovalBlock: BlockConfig = {
       layout: 'full',
       language: 'json',
       description: 'For client testing: provide mock data to skip waiting',
-      placeholder: '{\n  "approved": true\n}',
+      placeholder: '',
       condition: { field: 'resumeTriggerType', value: 'webhook' },
     },
   ],
@@ -245,19 +236,11 @@ export const UserApprovalBlock: BlockConfig = {
   inputs: {
     resumeTriggerType: {
       type: 'string',
-      description: 'Type of trigger to resume execution (time or webhook)',
+      description: 'Type of trigger to resume execution (human, api, or webhook)',
     },
-    timeValue: {
-      type: 'string',
-      description: 'Wait duration value',
-    },
-    timeUnit: {
-      type: 'string',
-      description: 'Wait duration unit (seconds or minutes)',
-    },
-    webhookSecret: {
-      type: 'string',
-      description: 'Webhook authentication secret for resuming',
+    webhookResumeConfig: {
+      type: 'json',
+      description: 'Webhook resume configuration including auth settings',
     },
     webhookSendUrl: {
       type: 'string',
@@ -314,6 +297,14 @@ export const UserApprovalBlock: BlockConfig = {
     apiEditorResponse: {
       type: 'json',
       description: 'JSON response data for API resume (editor mode)',
+    },
+    apiStatus: {
+      type: 'number',
+      description: 'HTTP status code for API resume response',
+    },
+    apiHeaders: {
+      type: 'json',
+      description: 'HTTP headers for API resume response',
     },
   },
   outputs: {
