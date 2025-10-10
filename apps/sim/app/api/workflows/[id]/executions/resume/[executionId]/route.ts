@@ -201,19 +201,51 @@ export async function POST(
       delete (context.metadata as any).waitBlockInfo
     }
 
-    // For API resume, update the HITL block's state with the resume input
-    // so downstream blocks can reference the API input fields
-    if (resumeType === 'api' && pausedWaitBlockInfo?.blockId && Object.keys(resumeInput).length > 0) {
+    // Update the HITL block's state with the resume input
+    // so downstream blocks can reference the input fields (API inputs, approval data, webhook data, etc.)
+    if (pausedWaitBlockInfo?.blockId && Object.keys(resumeInput).length > 0) {
       const existingBlockState = context.blockStates.get(pausedWaitBlockInfo.blockId)
       
       if (existingBlockState) {
-        // Update the block state output to include the API input fields
+        // Update the block state output to include the resume input fields
         const { getBaseUrl } = await import('@/lib/urls/utils')
         const baseUrl = getBaseUrl()
-        const updatedOutput = {
-          resumeUrl: `${baseUrl}/api/workflows/${workflowId}/executions/resume/${executionId}`,
-          waitDuration: 0,
-          ...resumeInput, // Add all API input fields to the block output
+        
+        // Build the updated output based on resume type
+        let updatedOutput: any = {
+          ...existingBlockState.output, // Preserve existing output fields
+        }
+        
+        if (resumeType === 'api') {
+          // For API mode: add API input fields
+          updatedOutput = {
+            resumeUrl: `${baseUrl}/api/workflows/${workflowId}/executions/resume/${executionId}`,
+            waitDuration: 0,
+            ...resumeInput, // All API input fields
+          }
+        } else if (resumeType === 'human') {
+          // For human mode: add approval status and custom form fields
+          const { approved, approvedAt, approvalToken, ...customFields } = resumeInput
+          const approveUrl = approvalToken ? `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/approve/${approvalToken}` : existingBlockState.output?.approveUrl
+          
+          updatedOutput = {
+            approveUrl,
+            waitDuration: 0,
+            ...(typeof approved === 'boolean' && { approved }), // Include approved if present
+            ...customFields, // Add custom form fields
+          }
+          
+          // Include content if it was in the original output
+          if (existingBlockState.output?.content) {
+            updatedOutput.content = existingBlockState.output.content
+          }
+        } else if (resumeType === 'webhook') {
+          // For webhook mode: add webhook payload data
+          updatedOutput = {
+            ...existingBlockState.output,
+            webhook: resumeInput,
+            waitDuration: 0,
+          }
         }
         
         context.blockStates.set(pausedWaitBlockInfo.blockId, {
@@ -221,8 +253,9 @@ export async function POST(
           output: updatedOutput,
         })
         
-        logger.info('Updated HITL block state with API resume input', {
+        logger.info('Updated HITL block state with resume input', {
           blockId: pausedWaitBlockInfo.blockId,
+          resumeType,
           resumeInputKeys: Object.keys(resumeInput),
           outputKeys: Object.keys(updatedOutput),
         })

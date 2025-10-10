@@ -361,6 +361,14 @@ export async function POST(
         })
       }
 
+      // Build the resume input with approval decision and form data
+      const approvalResumeInput = {
+        approved: true,
+        approvedAt: new Date().toISOString(),
+        approvalToken: token,
+        ...(formData && { ...formData }), // Include custom form data if provided
+      }
+
       // Resume execution from the paused state (only if approved)
       const { executor, context: resumedContext } = Executor.createFromPausedState(
         workflowState,
@@ -374,14 +382,46 @@ export async function POST(
           workspaceId: workflowRecord.workspaceId || undefined,
           isDeployedContext: (execution.metadata as any)?.isDeployedContext || false,
           // Pass the approval decision as resumeInput
-          resumeInput: {
-            approved: true,
-            approvedAt: new Date().toISOString(),
-            approvalToken: token,
-            ...(formData && { ...formData }), // Include custom form data if provided
-          },
+          resumeInput: approvalResumeInput,
         }
       )
+
+      // Update the HITL block's state with the approval data
+      // so downstream blocks can reference the approval status and custom fields
+      const waitBlockInfo = (execution.metadata as any)?.waitBlockInfo
+      if (waitBlockInfo?.blockId) {
+        const existingBlockState = resumedContext.blockStates.get(waitBlockInfo.blockId)
+        
+        if (existingBlockState) {
+          // Extract approval fields and custom form data
+          const { approved, approvedAt, approvalToken: tokenFromInput, ...customFields } = approvalResumeInput
+          const approveUrl = tokenFromInput ? `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/approve/${tokenFromInput}` : existingBlockState.output?.approveUrl
+          
+          const updatedOutput: any = {
+            approveUrl,
+            waitDuration: 0,
+            approved,
+            ...customFields, // Add custom form fields
+          }
+          
+          // Include content if it was in the original output
+          if (existingBlockState.output?.content) {
+            updatedOutput.content = existingBlockState.output.content
+          }
+          
+          resumedContext.blockStates.set(waitBlockInfo.blockId, {
+            ...existingBlockState,
+            output: updatedOutput,
+          })
+          
+          logger.info('Updated HITL block state with approval data', {
+            blockId: waitBlockInfo.blockId,
+            approved,
+            customFieldsCount: Object.keys(customFields).length,
+            outputKeys: Object.keys(updatedOutput),
+          })
+        }
+      }
 
       // Log context state before resuming
       logger.info('Context state before resume', {
