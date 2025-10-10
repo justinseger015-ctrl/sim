@@ -129,17 +129,33 @@ export function deserializeExecutionContext(serialized: any): ExecutionContext {
   console.log('[deserializeExecutionContext] Output blockStates Map size', blockStates.size)
   
   // Reconstruct decisions Maps - handle missing or malformed data
+  // Handle both array format (proper serialization) and object format (legacy/incorrect)
+  const routerData = serialized.decisions?.router
+  const conditionData = serialized.decisions?.condition
+  
   const decisions = {
-    router: new Map<string, string>(serialized.decisions?.router || []),
-    condition: new Map<string, string>(serialized.decisions?.condition || []),
+    router: new Map<string, string>(Array.isArray(routerData) ? routerData : Object.entries(routerData || {})),
+    condition: new Map<string, string>(Array.isArray(conditionData) ? conditionData : Object.entries(conditionData || {})),
   }
   
-  // Reconstruct loop-related Maps and Sets - handle missing data
-  const loopIterations = new Map<string, number>(serialized.loopIterations || [])
-  const loopItems = new Map<string, any>(serialized.loopItems || [])
-  const completedLoops = new Set<string>(serialized.completedLoops || [])
+  // Reconstruct loop-related Maps and Sets - handle missing data and both array/object formats
+  const loopIterations = new Map<string, number>(
+    Array.isArray(serialized.loopIterations) 
+      ? serialized.loopIterations 
+      : Object.entries(serialized.loopIterations || {})
+  )
+  const loopItems = new Map<string, any>(
+    Array.isArray(serialized.loopItems)
+      ? serialized.loopItems
+      : Object.entries(serialized.loopItems || {})
+  )
+  const completedLoops = new Set<string>(
+    Array.isArray(serialized.completedLoops)
+      ? serialized.completedLoops
+      : Object.values(serialized.completedLoops || {})
+  )
   
-  // Reconstruct parallelExecutions Map
+  // Reconstruct parallelExecutions Map - handle both array and object formats for nested Maps/Sets
   const parallelExecutions = serialized.parallelExecutions
     ? (new Map(
         serialized.parallelExecutions.map((item: any) => [
@@ -148,8 +164,16 @@ export function deserializeExecutionContext(serialized: any): ExecutionContext {
             parallelCount: item.parallelCount,
             distributionItems: item.distributionItems,
             completedExecutions: item.completedExecutions,
-            executionResults: new Map(item.executionResults),
-            activeIterations: new Set(item.activeIterations),
+            executionResults: new Map(
+              Array.isArray(item.executionResults)
+                ? item.executionResults
+                : Object.entries(item.executionResults || {})
+            ),
+            activeIterations: new Set(
+              Array.isArray(item.activeIterations)
+                ? item.activeIterations
+                : Object.values(item.activeIterations || {})
+            ),
             currentIteration: item.currentIteration,
             parallelType: item.parallelType,
           },
@@ -157,7 +181,7 @@ export function deserializeExecutionContext(serialized: any): ExecutionContext {
       ) as any)
     : undefined
   
-  // Reconstruct loopExecutions Map
+  // Reconstruct loopExecutions Map - handle both array and object formats for nested Maps
   const loopExecutions = serialized.loopExecutions
     ? (new Map(
         serialized.loopExecutions.map((item: any) => [
@@ -166,21 +190,37 @@ export function deserializeExecutionContext(serialized: any): ExecutionContext {
             maxIterations: item.maxIterations,
             loopType: item.loopType,
             forEachItems: item.forEachItems,
-            executionResults: new Map(item.executionResults),
+            executionResults: new Map(
+              Array.isArray(item.executionResults)
+                ? item.executionResults
+                : Object.entries(item.executionResults || {})
+            ),
             currentIteration: item.currentIteration,
           },
         ])
       ) as any)
     : undefined
   
-  // Reconstruct parallelBlockMapping Map
+  // Reconstruct parallelBlockMapping Map - handle both array and object formats
   const parallelBlockMapping = serialized.parallelBlockMapping
-    ? new Map<string, { originalBlockId: string; parallelId: string; iterationIndex: number }>(serialized.parallelBlockMapping)
+    ? new Map<string, { originalBlockId: string; parallelId: string; iterationIndex: number }>(
+        Array.isArray(serialized.parallelBlockMapping)
+          ? serialized.parallelBlockMapping
+          : Object.entries(serialized.parallelBlockMapping)
+      )
     : undefined
   
-  // Reconstruct execution tracking Sets - handle missing data
-  const executedBlocks = new Set<string>(serialized.executedBlocks || [])
-  const activeExecutionPath = new Set<string>(serialized.activeExecutionPath || [])
+  // Reconstruct execution tracking Sets - handle missing data and both array/object formats
+  const executedBlocks = new Set<string>(
+    Array.isArray(serialized.executedBlocks)
+      ? serialized.executedBlocks
+      : Object.values(serialized.executedBlocks || {})
+  )
+  const activeExecutionPath = new Set<string>(
+    Array.isArray(serialized.activeExecutionPath)
+      ? serialized.activeExecutionPath
+      : Object.values(serialized.activeExecutionPath || {})
+  )
   
   return {
     workflowId: serialized.workflowId,

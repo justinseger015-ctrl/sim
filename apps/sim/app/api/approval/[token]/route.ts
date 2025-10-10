@@ -369,76 +369,43 @@ export async function POST(
         ...(formData && { ...formData }), // Include custom form data if provided
       }
 
-      // Resume execution from the paused state (only if approved)
-      const { executor, context: resumedContext } = Executor.createFromPausedState(
-        workflowState,
-        context,
-        execution.environmentVariables as Record<string, string>,
-        execution.workflowInput || {},
-        {},
-        {
-          executionId: execution.executionId,
-          workflowId: execution.workflowId,
-          workspaceId: workflowRecord.workspaceId || undefined,
-          isDeployedContext: (execution.metadata as any)?.isDeployedContext || false,
-          // Pass the approval decision as resumeInput
-          resumeInput: approvalResumeInput,
-        }
-      )
-
-      // Update the HITL block's state with the approval data
-      // so downstream blocks can reference the approval status and custom fields
-      const waitBlockInfo = (execution.metadata as any)?.waitBlockInfo
-      if (waitBlockInfo?.blockId) {
-        const existingBlockState = resumedContext.blockStates.get(waitBlockInfo.blockId)
-        
-        if (existingBlockState) {
-          // Extract approval fields and custom form data
-          const { approved, approvedAt, approvalToken: tokenFromInput, ...customFields } = approvalResumeInput
-          const approveUrl = tokenFromInput ? `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/approve/${tokenFromInput}` : existingBlockState.output?.approveUrl
-          
-          const updatedOutput: any = {
-            approveUrl,
-            waitDuration: 0,
-            approved,
-            ...customFields, // Add custom form fields
-          }
-          
-          // Include content if it was in the original output
-          if (existingBlockState.output?.content) {
-            updatedOutput.content = existingBlockState.output.content
-          }
-          
-          resumedContext.blockStates.set(waitBlockInfo.blockId, {
-            ...existingBlockState,
-            output: updatedOutput,
-          })
-          
-          logger.info('Updated HITL block state with approval data', {
-            blockId: waitBlockInfo.blockId,
-            approved,
-            customFieldsCount: Object.keys(customFields).length,
-            outputKeys: Object.keys(updatedOutput),
-          })
-        }
-      }
-
-      // Log context state before resuming
-      logger.info('Context state before resume', {
+      // Call the resume API endpoint instead of handling resume directly
+      // This ensures all resume logic is in one place and works consistently
+      const { getBaseUrl } = await import('@/lib/urls/utils')
+      const baseUrl = getBaseUrl()
+      const resumeUrl = `${baseUrl}/api/workflows/${execution.workflowId}/executions/resume/${execution.executionId}`
+      
+      logger.info('Calling resume API from approval endpoint', {
+        resumeUrl,
         executionId: execution.executionId,
-        executedBlocksSize: resumedContext.executedBlocks.size,
-        executedBlockIds: Array.from(resumedContext.executedBlocks),
-        blockLogsCount: resumedContext.blockLogs?.length || 0,
-        hasResumeInput: !!(resumedContext as any).resumeInput,
-        isResuming: !!(resumedContext as any).isResuming,
+        workflowId: execution.workflowId,
+        approvalData: Object.keys(approvalResumeInput),
       })
 
-      // Resume from the saved context (continues from where it paused)
-      const result = await executor.resumeFromContext(execution.workflowId, resumedContext)
+      const resumeResponse = await fetch(resumeUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // Pass the request headers to maintain session context
+          ...(request.headers.get('cookie') && { 'Cookie': request.headers.get('cookie')! }),
+        },
+        body: JSON.stringify(approvalResumeInput),
+      })
 
-      // Check if it's a streaming result or regular result
-      const executionResult = 'stream' in result && 'execution' in result ? result.execution : result
-      const isSuccess = 'success' in executionResult ? executionResult.success : true
+      if (!resumeResponse.ok) {
+        const errorText = await resumeResponse.text()
+        logger.error('Resume API call failed from approval endpoint', {
+          status: resumeResponse.status,
+          error: errorText,
+        })
+        throw new Error(errorText || 'Failed to resume execution')
+      }
+
+      const resumeResult = await resumeResponse.json()
+      
+      // Extract execution result from resume response
+      const executionResult = resumeResult
+      const isSuccess = resumeResult.success !== false
       
       logger.info('Execution result after resume', {
         executionId: execution.executionId,
@@ -453,9 +420,6 @@ export async function POST(
         ...executionResult,
         logs: combinedLogs,
       }
-
-      // Ensure resumed context retains block logs for downstream handlers
-      resumedContext.blockLogs = combinedLogs
 
       // Delete the paused execution record now that it's resumed
       await db

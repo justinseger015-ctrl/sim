@@ -129,7 +129,7 @@ export async function POST(
       )
     }
 
-    // For API resume type, validate the input payload
+    // Parse the input payload for API and Human resume types
     let resumeInput: any = {}
     const resumeType = (resumeData.metadata as any)?.resumeTriggerType
     
@@ -140,36 +140,49 @@ export async function POST(
       waitBlockInfo: (resumeData.metadata as any)?.waitBlockInfo,
     })
     
-    if (resumeType === 'api') {
-      // Parse and validate the API payload against the defined input schema
+    // Try to parse JSON body for both API and Human modes
+    if (resumeType === 'api' || resumeType === 'human') {
       try {
         const payload = await request.json()
         
-        // Validate against the defined input schema
-        const apiInputFormat = (resumeData.metadata as any)?.apiInputFormat
-        if (apiInputFormat && Array.isArray(apiInputFormat)) {
-          // Validate required fields
-          for (const field of apiInputFormat) {
-            if (field.required && !(field.name in payload)) {
-              return NextResponse.json(
-                { error: `Missing required field: ${field.name}` },
-                { status: 400 }
-              )
+        if (resumeType === 'api') {
+          // Validate against the defined input schema
+          const apiInputFormat = (resumeData.metadata as any)?.apiInputFormat
+          if (apiInputFormat && Array.isArray(apiInputFormat)) {
+            // Validate required fields
+            for (const field of apiInputFormat) {
+              if (field.required && !(field.name in payload)) {
+                return NextResponse.json(
+                  { error: `Missing required field: ${field.name}` },
+                  { status: 400 }
+                )
+              }
             }
           }
+          
+          logger.info('API resume payload validated', {
+            executionId,
+            payloadKeys: Object.keys(payload),
+          })
+        } else if (resumeType === 'human') {
+          logger.info('Human approval payload received', {
+            executionId,
+            payloadKeys: Object.keys(payload),
+            hasApproved: 'approved' in payload,
+          })
         }
         
         resumeInput = payload
-        
-        logger.info('API resume payload validated', {
-          executionId,
-          payloadKeys: Object.keys(payload),
-        })
       } catch (parseError) {
-        return NextResponse.json(
-          { error: 'Invalid JSON payload' },
-          { status: 400 }
-        )
+        // For API mode, JSON is required; for human mode, it's optional
+        if (resumeType === 'api') {
+          return NextResponse.json(
+            { error: 'Invalid JSON payload' },
+            { status: 400 }
+          )
+        }
+        // For human mode without body, continue with empty resumeInput
+        logger.info('No body provided for human resume, continuing with empty input')
       }
     }
 

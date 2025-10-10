@@ -125,8 +125,16 @@ export class PausedExecutionService {
     if (context.blockStates instanceof Map) {
       // Server-side context with Maps/Sets - needs serialization
       serializedContext = serializeExecutionContext(context)
+    } else if (Array.isArray((context as any).blockStates)) {
+      // Already serialized context from client (using serializeExecutionContext)
+      serializedContext = context
+      logger.info('Context already serialized from client', {
+        executionId,
+        blockStatesLength: (context as any).blockStates.length,
+      })
     } else {
-      // Client-side: Maps are already plain objects - convert to proper format
+      // Legacy: Client-side with Maps as plain objects - convert to proper format
+      // This branch handles cases where JSON.stringify was called on a Map
       const blockStatesObj = context.blockStates as any
       const blockStatesArray = Object.keys(blockStatesObj || {}).map(blockId => ({
         blockId,

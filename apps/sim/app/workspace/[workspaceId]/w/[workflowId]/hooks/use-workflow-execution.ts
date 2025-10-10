@@ -680,8 +680,11 @@ export function useWorkflowExecution() {
               const waitBlockInfo = (result.metadata as any)?.waitBlockInfo
               if (waitBlockInfo?.blockId) {
                 try {
-                  // Send context as-is - the paused-execution-service will handle serialization
-                  // JSON.stringify will convert Maps/Sets to plain objects, which the service expects
+                  // Serialize the context properly before sending via JSON.stringify
+                  // Maps need to be converted to arrays for proper serialization
+                  const { serializeExecutionContext } = await import('@/lib/execution/pause-resume-utils')
+                  const serializedContext = serializeExecutionContext(pausedContext)
+                  
                   await fetch('/api/execution/pause', {
                     method: 'POST',
                     headers: {
@@ -691,7 +694,7 @@ export function useWorkflowExecution() {
                       workflowId: activeWorkflowId,
                       executionId,
                       blockId: waitBlockInfo.blockId,
-                      context: pausedContext,
+                      context: serializedContext,
                       pausedAt: new Date().toISOString(),
                       resumeType: waitBlockInfo.resumeType || 'human',
                       humanOperation: waitBlockInfo.humanOperation,
