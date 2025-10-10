@@ -781,6 +781,7 @@ export class WaitBlockHandler implements BlockHandler {
                 resumeType: 'human',
                 humanOperation: inputs.humanOperation || 'approval',
                 humanInputFormat: inputs.humanInputFormat,
+                fullApprovalView: inputs.fullApprovalView !== undefined ? inputs.fullApprovalView : true,
               },
               baseUrl
             )
@@ -844,6 +845,7 @@ export class WaitBlockHandler implements BlockHandler {
                 resumeType: 'human',
                 humanOperation: inputs.humanOperation || 'approval',
                 humanInputFormat: inputs.humanInputFormat,
+                fullApprovalView: inputs.fullApprovalView !== undefined ? inputs.fullApprovalView : true,
               }),
             })
 

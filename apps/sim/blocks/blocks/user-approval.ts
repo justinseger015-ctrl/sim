@@ -83,6 +83,17 @@ export const UserApprovalBlock: BlockConfig = {
       description: 'Structure what you want to evaluate. Reference variables and format the information for human review. You can reference previous block outputs and format the information for easy review.',
       condition: { field: 'resumeTriggerType', value: 'human' },
     },
+    // Full approval view toggle (only in advanced mode)
+    {
+      id: 'fullApprovalView',
+      title: 'Full Approval View',
+      type: 'switch',
+      layout: 'full',
+      mode: 'advanced',
+      description: 'Show frozen canvas and execution logs on the approval page. When disabled, shows a simplified view with only the content and approval controls.',
+      condition: { field: 'resumeTriggerType', value: 'human' },
+      defaultValue: true, // Default to true (show full view)
+    },
     // API input format configuration
     {
       id: 'apiInputFormat',
@@ -281,6 +292,10 @@ export const UserApprovalBlock: BlockConfig = {
     content: {
       type: 'string',
       description: 'Content to display to the approver for evaluation',
+    },
+    fullApprovalView: {
+      type: 'boolean',
+      description: 'Show frozen canvas and execution logs on approval page',
     },
     apiInputFormat: {
       type: 'json',

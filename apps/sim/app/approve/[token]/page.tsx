@@ -28,6 +28,7 @@ interface ApprovalDetails {
     type: 'string' | 'number' | 'boolean' | 'object' | 'array'
     required?: boolean
   }>
+  fullApprovalView?: boolean
 }
 
 interface ExecutionData {
@@ -616,6 +617,9 @@ export default function ApprovalPage() {
     )
   }
 
+  // Determine if we should show the full view or simplified view
+  const showFullView = details?.fullApprovalView !== false
+
   return (
     <div className="flex h-screen flex-col bg-background">
       <ApprovalHeader workflowName={details?.workflowName} />
@@ -635,12 +639,99 @@ export default function ApprovalPage() {
       )}
       
       {/* Main Content */}
-      <div className="flex flex-1 overflow-hidden min-w-0" style={{ height: result ? 'calc(100vh - 96px)' : 'calc(100vh - 48px)' }}>
-        {/* Left Panel: Execution Timeline & Block Details */}
-        <div 
-          className="flex flex-col overflow-hidden border-r bg-card min-w-0"
-          style={{ width: `${leftPanelWidth}px` }}
-        >
+      {!showFullView ? (
+        // Simplified View - Centered layout with content and controls
+        <div className="flex flex-1 items-center justify-center p-8 overflow-auto" style={{ height: result ? 'calc(100vh - 96px)' : 'calc(100vh - 48px)' }}>
+          <div className="w-full max-w-2xl space-y-6">
+            {/* Content to Evaluate */}
+            <Card className="border">
+              <div className="p-6 space-y-4">
+                <h3 className="text-sm font-semibold text-muted-foreground">
+                  CONTENT TO EVALUATE
+                </h3>
+                {!executionData ? (
+                  <div className="flex items-center gap-2 text-muted-foreground py-4">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-sm">Loading...</span>
+                  </div>
+                ) : executionData?.workflowState?.blocks ? (() => {
+                  // Find the HITL block
+                  const hitlBlock = Object.entries(executionData.workflowState.blocks).find(
+                    ([_, block]: [string, any]) => block.type === 'user_approval'
+                  )
+                  
+                  if (hitlBlock) {
+                    const [blockId, block] = hitlBlock as [string, any]
+                    // Find the execution data for this block
+                    const blockExecution = findTraceSpanByBlockId(
+                      executionData.traceSpans,
+                      blockId
+                    )
+                    
+                    // Get content from output or subBlocks
+                    let content = blockExecution?.output?.content
+                    if (!content && block.subBlocks?.content) {
+                      content = typeof block.subBlocks.content === 'object' 
+                        ? block.subBlocks.content.value 
+                        : block.subBlocks.content
+                    }
+                    
+                    if (content && typeof content === 'string') {
+                      return (
+                        <div className="whitespace-pre-wrap break-words text-sm text-foreground rounded-lg border bg-muted/30 p-4">
+                          {content}
+                        </div>
+                      )
+                    }
+                  }
+                  
+                  return (
+                    <p className="text-sm text-muted-foreground italic">
+                      No content provided for evaluation
+                    </p>
+                  )
+                })() : (
+                  <p className="text-sm text-muted-foreground italic">
+                    No content provided for evaluation
+                  </p>
+                )}
+              </div>
+            </Card>
+
+            {/* Approval Controls */}
+            <Card className="border">
+              <div className="p-6">
+                {!details ? (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-sm">Loading controls...</span>
+                  </div>
+                ) : (
+                  <ApprovalControls
+                    details={details}
+                    submitting={submitting}
+                    submittingAction={submittingAction}
+                    error={error}
+                    formData={formData}
+                    setFormData={setFormData}
+                    onSubmit={handleCustomSubmit}
+                    onApprove={() => handleAction('approve')}
+                    onReject={() => handleAction('reject')}
+                    result={result}
+                  />
+                )}
+              </div>
+            </Card>
+          </div>
+        </div>
+      ) : (
+        // Full View - Three-panel layout with canvas and logs
+        <div className="flex flex-1 overflow-hidden min-w-0" style={{ height: result ? 'calc(100vh - 96px)' : 'calc(100vh - 48px)' }}>
+          {/* Left Panel: Execution Timeline & Block Details */}
+          <div 
+            className="flex flex-col overflow-hidden border-r bg-card min-w-0"
+            style={{ width: `${leftPanelWidth}px` }}
+          >
           <ScrollArea className="flex-1 min-w-0">
             <div className="flex flex-col gap-6 p-6 min-w-0">
               {/* Trace Spans */}
@@ -895,7 +986,8 @@ export default function ApprovalPage() {
             </ScrollArea>
           </div>
         </div>
-      </div>
+        </div>
+      )}
     </div>
   )
 }

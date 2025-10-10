@@ -57,6 +57,7 @@ export async function GET(
       workflowName: (execution.workflowState as any)?.name || 'Workflow',
       humanOperation: metadata?.humanOperation || 'approval',
       humanInputFormat: metadata?.humanInputFormat,
+      fullApprovalView: metadata?.fullApprovalView !== undefined ? metadata.fullApprovalView : true,
     })
   } catch (error) {
     logger.error('Error retrieving approval details', { error })

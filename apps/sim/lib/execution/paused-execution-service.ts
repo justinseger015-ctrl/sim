@@ -18,6 +18,7 @@ export interface SavePausedExecutionParams {
   resumeType?: 'human' | 'api'  // Type of resume mechanism
   humanOperation?: 'approval' | 'custom'  // Human operation mode
   humanInputFormat?: any  // Input schema for custom form in Human mode
+  fullApprovalView?: boolean  // Show full approval view with canvas and logs
   apiInputFormat?: any  // Input schema for API resume type
   apiResponseMode?: string  // Response mode for API resume (builder/json)
   apiBuilderResponse?: any  // Builder response structure
@@ -60,6 +61,7 @@ export class PausedExecutionService {
       resumeType = 'human',
       humanOperation,
       humanInputFormat,
+      fullApprovalView,
       apiInputFormat,
       apiResponseMode,
       apiBuilderResponse,
@@ -286,6 +288,7 @@ export class PausedExecutionService {
             ...(resumeType === 'human' && {
               humanOperation,
               humanInputFormat,
+              fullApprovalView,
             }),
             ...(resumeType === 'api' && {
               apiInputFormat,
