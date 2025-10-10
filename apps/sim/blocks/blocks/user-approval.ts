@@ -47,6 +47,7 @@ export const UserApprovalBlock: BlockConfig = {
       options: [
         { label: 'Approval', id: 'approval' },
         { label: 'Custom', id: 'custom' },
+        // { label: 'Chat', id: 'chat' }, // Commented out - feature under development
       ],
       value: () => 'approval',
       description: 'Choose the type of human interaction',
@@ -339,6 +340,10 @@ export const UserApprovalBlock: BlockConfig = {
       type: 'string',
       description: 'Content displayed to the approver for evaluation',
     },
+    // chat: {
+    //   type: 'string',
+    //   description: 'Final chat conversation content (Human - Chat mode only)',
+    // },
     resumeUrl: {
       type: 'string',
       description: 'API/Webhook endpoint to resume workflow (API/Webhook modes)',

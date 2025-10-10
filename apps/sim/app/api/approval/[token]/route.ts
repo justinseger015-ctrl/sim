@@ -253,12 +253,23 @@ export async function POST(
         }
         
         if (humanOperation === 'approval') {
-          // Approval mode: include approved status
+          // Approval mode: include approved status and edited content
           approvalOutput.approved = approved
+          if (formData && formData.content) {
+            approvalOutput.content = formData.content
+          }
         } else if (humanOperation === 'custom') {
           // Custom mode: include all form data fields (no 'approved' field)
           if (formData) {
             Object.assign(approvalOutput, formData)
+          }
+        } else if (humanOperation === 'chat') {
+          // Chat mode: include chat conversation and edited content
+          if (formData && formData.chat) {
+            approvalOutput.chat = formData.chat
+          }
+          if (formData && formData.content) {
+            approvalOutput.content = formData.content
           }
         }
         

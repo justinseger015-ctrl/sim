@@ -21,7 +21,7 @@ interface ApprovalDetails {
   pausedAt: string
   metadata: any
   workflowName: string
-  humanOperation?: 'approval' | 'custom'
+  humanOperation?: 'approval' | 'custom' | 'chat'
   humanInputFormat?: Array<{
     id: string
     name: string
@@ -29,6 +29,11 @@ interface ApprovalDetails {
     required?: boolean
   }>
   fullApprovalView?: boolean
+}
+
+interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
 }
 
 interface ExecutionData {
@@ -77,6 +82,14 @@ function ApprovalControls({
   onApprove,
   onReject,
   result,
+  chatMessages,
+  chatInput,
+  setChatInput,
+  onChatSend,
+  onChatSubmit,
+  isSendingChat,
+  editableContent,
+  setEditableContent,
 }: {
   details: ApprovalDetails
   submitting: boolean
@@ -88,8 +101,17 @@ function ApprovalControls({
   onApprove: () => void
   onReject: () => void
   result: 'approve' | 'reject' | null
+  chatMessages?: ChatMessage[]
+  chatInput?: string
+  setChatInput?: (value: string) => void
+  onChatSend?: () => void
+  onChatSubmit?: () => void
+  isSendingChat?: boolean
+  editableContent?: string
+  setEditableContent?: (value: string) => void
 }) {
   const isCustomForm = details?.humanOperation === 'custom' && details?.humanInputFormat
+  const isChatMode = details?.humanOperation === 'chat'
   const isDisabled = submitting || !!result
 
   return (
@@ -102,7 +124,126 @@ function ApprovalControls({
         </div>
       )}
 
-      {isCustomForm ? (
+      {isChatMode ? (
+        // Chat Mode
+        <div className="space-y-4">
+          {/* Editable Content */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Content to Evaluate</Label>
+            <Textarea
+              value={editableContent || ''}
+              onChange={(e) => setEditableContent?.(e.target.value)}
+              disabled={isDisabled}
+              className="min-h-[400px] resize-y"
+              placeholder="Content will appear here..."
+            />
+          </div>
+
+          {/* Chat Messages */}
+          {chatMessages && chatMessages.length > 0 && (
+            <div className="space-y-2 max-h-[600px] overflow-y-auto rounded-lg border bg-muted/30 p-4">
+              {chatMessages.map((msg, idx) => (
+                <div
+                  key={idx}
+                  className={cn(
+                    'rounded-lg p-3 text-sm',
+                    msg.role === 'user'
+                      ? 'bg-primary/10 ml-8'
+                      : 'bg-secondary mr-8'
+                  )}
+                >
+                  <div className="font-semibold text-xs mb-1 text-muted-foreground">
+                    {msg.role === 'user' ? 'You' : 'Assistant'}
+                  </div>
+                  <div className="whitespace-pre-wrap">{msg.content}</div>
+                </div>
+              ))}
+              {isSendingChat && (
+                <div className="flex items-center gap-2 text-muted-foreground text-sm p-3">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Thinking...</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Chat Input */}
+          <div className="space-y-3">
+            <Textarea
+              value={chatInput || ''}
+              onChange={(e) => setChatInput?.(e.target.value)}
+              placeholder="Ask a question or discuss the content..."
+              disabled={isDisabled || isSendingChat}
+              className="min-h-[200px] resize-y"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  onChatSend?.()
+                }
+              }}
+            />
+            
+            {/* Chat Actions */}
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                onClick={onReject}
+                disabled={isDisabled}
+                variant="outline"
+                className="border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground disabled:opacity-50"
+              >
+                {submittingAction === 'reject' ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    Reject
+                    <XCircle className="ml-1 h-4 w-4" />
+                  </>
+                )}
+              </Button>
+              
+              <Button
+                type="button"
+                onClick={onChatSend}
+                disabled={!chatInput?.trim() || isDisabled || isSendingChat}
+                variant="outline"
+                className="flex-1"
+              >
+                {isSendingChat ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  'Send'
+                )}
+              </Button>
+
+              <Button
+                type="button"
+                onClick={onChatSubmit}
+                disabled={isDisabled}
+                className="flex-1 bg-[var(--brand-primary-hover-hex)] hover:bg-[var(--brand-primary-hover-hex)]/90 disabled:opacity-50"
+              >
+                {submittingAction === 'approve' ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Submitting...
+                  </>
+                ) : (
+                  <>
+                    Approve
+                    <ArrowRightCircle className="ml-1 h-4 w-4" />
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : isCustomForm ? (
         // Custom Form Mode
         <form onSubmit={onSubmit} className="space-y-4 min-w-0">
           <div className="space-y-3 min-w-0">
@@ -156,7 +297,7 @@ function ApprovalControls({
                       }}
                       required={field.required}
                       disabled={isDisabled}
-                      className="min-h-[80px] w-full font-mono text-sm break-words"
+                      className="min-h-[200px] w-full font-mono text-sm break-words resize-y"
                     />
                   ) : (
                     <Input
@@ -216,42 +357,57 @@ function ApprovalControls({
           </form>
         ) : (
           // Approval Mode
-          <div className="flex gap-3">
-            <Button
-              onClick={onReject}
-              disabled={isDisabled}
-              variant="outline"
-              className="flex-1 border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground disabled:opacity-50"
-            >
-              {submittingAction === 'reject' ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                <>
-                  Reject
-                  <XCircle className="ml-1 h-4 w-4" />
-                </>
-              )}
-            </Button>
-            <Button
-              onClick={onApprove}
-              disabled={isDisabled}
-              className="flex-1 bg-[var(--brand-primary-hover-hex)] hover:bg-[var(--brand-primary-hover-hex)]/90 disabled:opacity-50"
-            >
-              {submittingAction === 'approve' ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                <>
-                  Continue
-                  <ArrowRightCircle className="ml-1 h-4 w-4" />
-                </>
-              )}
-            </Button>
+          <div className="space-y-4">
+            {/* Editable Content */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Content to Evaluate</Label>
+              <Textarea
+                value={editableContent || ''}
+                onChange={(e) => setEditableContent?.(e.target.value)}
+                disabled={isDisabled}
+                className="min-h-[500px] resize-y"
+                placeholder="Content will appear here..."
+              />
+            </div>
+
+            {/* Approval Buttons */}
+            <div className="flex gap-3">
+              <Button
+                onClick={onReject}
+                disabled={isDisabled}
+                variant="outline"
+                className="flex-1 border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground disabled:opacity-50"
+              >
+                {submittingAction === 'reject' ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    Reject
+                    <XCircle className="ml-1 h-4 w-4" />
+                  </>
+                )}
+              </Button>
+              <Button
+                onClick={onApprove}
+                disabled={isDisabled}
+                className="flex-1 bg-[var(--brand-primary-hover-hex)] hover:bg-[var(--brand-primary-hover-hex)]/90 disabled:opacity-50"
+              >
+                {submittingAction === 'approve' ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    Continue
+                    <ArrowRightCircle className="ml-1 h-4 w-4" />
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         )}
     </div>
@@ -279,6 +435,14 @@ export default function ApprovalPage() {
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null)
   const [approvalSectionHeight, setApprovalSectionHeight] = useState(200)
   const [isVerticalDragging, setIsVerticalDragging] = useState(false)
+  
+  // Chat mode state
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [isSendingChat, setIsSendingChat] = useState(false)
+  
+  // Editable content state
+  const [editableContent, setEditableContent] = useState('')
   
   // Calculate initial approval section height based on content
   useEffect(() => {
@@ -469,6 +633,29 @@ export default function ApprovalPage() {
     fetchDetails()
   }, [token])
 
+  // Initialize editable content when execution data loads
+  useEffect(() => {
+    if (executionData?.workflowState?.blocks) {
+      const hitlBlock = Object.entries(executionData.workflowState.blocks).find(
+        ([_, block]: [string, any]) => block.type === 'user_approval'
+      )
+      
+      if (hitlBlock) {
+        const [blockId, block] = hitlBlock as [string, any]
+        const blockExecution = findTraceSpanByBlockId(executionData.traceSpans, blockId)
+        let content = blockExecution?.output?.content
+        if (!content && block.subBlocks?.content) {
+          content = typeof block.subBlocks.content === 'object' 
+            ? block.subBlocks.content.value 
+            : block.subBlocks.content
+        }
+        if (content && typeof content === 'string') {
+          setEditableContent(content)
+        }
+      }
+    }
+  }, [executionData])
+
   const handleAction = async (action: 'approve' | 'reject', customData?: Record<string, any>) => {
     setSubmitting(true)
     setSubmittingAction(action)
@@ -520,6 +707,63 @@ export default function ApprovalPage() {
     }
     
     handleAction('approve', formData)
+  }
+
+  const handleChatSend = async () => {
+    if (!chatInput.trim() || isSendingChat) return
+
+    const userMessage = chatInput.trim()
+    setChatInput('')
+    setIsSendingChat(true)
+    setError(null)
+
+    // Add user message to chat
+    const newMessages: ChatMessage[] = [...chatMessages, { role: 'user', content: userMessage }]
+    setChatMessages(newMessages)
+
+    try {
+      const response = await fetch(`/api/approval/${token}/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: userMessage,
+          chatHistory: chatMessages,
+          content: editableContent,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to get response')
+      }
+
+      const data = await response.json()
+      
+      // Add assistant response
+      const assistantMessage: ChatMessage = { role: 'assistant', content: data.response }
+      setChatMessages([...newMessages, assistantMessage])
+      
+      // In chat mode, replace content with the latest assistant message
+      setEditableContent(data.response)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send message')
+      // Remove user message on error
+      setChatMessages(chatMessages)
+    } finally {
+      setIsSendingChat(false)
+    }
+  }
+
+  const handleChatSubmit = () => {
+    // Get the latest chat content to submit
+    const chatContent = chatMessages
+      .map((msg) => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
+      .join('\n\n')
+    
+    // Pass both chat history and the final edited content
+    handleAction('approve', { chat: chatContent, content: editableContent })
   }
 
   // Recursively find a trace span by blockId
@@ -642,63 +886,8 @@ export default function ApprovalPage() {
       {!showFullView ? (
         // Simplified View - Centered layout with content and controls
         <div className="flex flex-1 items-center justify-center p-8 overflow-auto" style={{ height: result ? 'calc(100vh - 96px)' : 'calc(100vh - 48px)' }}>
-          <div className="w-full max-w-2xl space-y-6">
-            {/* Content to Evaluate */}
-            <Card className="border">
-              <div className="p-6 space-y-4">
-                <h3 className="text-sm font-semibold text-muted-foreground">
-                  CONTENT TO EVALUATE
-                </h3>
-                {!executionData ? (
-                  <div className="flex items-center gap-2 text-muted-foreground py-4">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span className="text-sm">Loading...</span>
-                  </div>
-                ) : executionData?.workflowState?.blocks ? (() => {
-                  // Find the HITL block
-                  const hitlBlock = Object.entries(executionData.workflowState.blocks).find(
-                    ([_, block]: [string, any]) => block.type === 'user_approval'
-                  )
-                  
-                  if (hitlBlock) {
-                    const [blockId, block] = hitlBlock as [string, any]
-                    // Find the execution data for this block
-                    const blockExecution = findTraceSpanByBlockId(
-                      executionData.traceSpans,
-                      blockId
-                    )
-                    
-                    // Get content from output or subBlocks
-                    let content = blockExecution?.output?.content
-                    if (!content && block.subBlocks?.content) {
-                      content = typeof block.subBlocks.content === 'object' 
-                        ? block.subBlocks.content.value 
-                        : block.subBlocks.content
-                    }
-                    
-                    if (content && typeof content === 'string') {
-                      return (
-                        <div className="whitespace-pre-wrap break-words text-sm text-foreground rounded-lg border bg-muted/30 p-4">
-                          {content}
-                        </div>
-                      )
-                    }
-                  }
-                  
-                  return (
-                    <p className="text-sm text-muted-foreground italic">
-                      No content provided for evaluation
-                    </p>
-                  )
-                })() : (
-                  <p className="text-sm text-muted-foreground italic">
-                    No content provided for evaluation
-                  </p>
-                )}
-              </div>
-            </Card>
-
-            {/* Approval Controls */}
+          <div className="w-full max-w-5xl">
+            {/* Approval Controls (includes editable content) */}
             <Card className="border">
               <div className="p-6">
                 {!details ? (
@@ -715,9 +904,17 @@ export default function ApprovalPage() {
                     formData={formData}
                     setFormData={setFormData}
                     onSubmit={handleCustomSubmit}
-                    onApprove={() => handleAction('approve')}
+                    onApprove={() => handleAction('approve', { content: editableContent })}
                     onReject={() => handleAction('reject')}
                     result={result}
+                    chatMessages={chatMessages}
+                    chatInput={chatInput}
+                    setChatInput={setChatInput}
+                    onChatSend={handleChatSend}
+                    onChatSubmit={handleChatSubmit}
+                    isSendingChat={isSendingChat}
+                    editableContent={editableContent}
+                    setEditableContent={setEditableContent}
                   />
                 )}
               </div>
@@ -977,9 +1174,17 @@ export default function ApprovalPage() {
                     formData={formData}
                     setFormData={setFormData}
                     onSubmit={handleCustomSubmit}
-                    onApprove={() => handleAction('approve')}
+                    onApprove={() => handleAction('approve', { content: editableContent })}
                     onReject={() => handleAction('reject')}
                     result={result}
+                    chatMessages={chatMessages}
+                    chatInput={chatInput}
+                    setChatInput={setChatInput}
+                    onChatSend={handleChatSend}
+                    onChatSubmit={handleChatSubmit}
+                    isSendingChat={isSendingChat}
+                    editableContent={editableContent}
+                    setEditableContent={setEditableContent}
                   />
                 )}
               </div>
