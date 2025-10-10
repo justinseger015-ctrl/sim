@@ -10,6 +10,8 @@ import ReactFlow, {
   type Node,
   type NodeTypes,
   ReactFlowProvider,
+  useReactFlow,
+  useStore,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 
@@ -20,8 +22,71 @@ import { WorkflowBlock } from '@/app/workspace/[workspaceId]/w/[workflowId]/comp
 import { WorkflowEdge } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-edge/workflow-edge'
 import { getBlock } from '@/blocks'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
+import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Plus, Minus } from 'lucide-react'
 
 const logger = createLogger('WorkflowPreview')
+
+// Zoom Controls Component (must be child of ReactFlowProvider)
+function ZoomControls({ showControls = false }: { showControls?: boolean }) {
+  if (!showControls) return null
+  
+  const { zoomIn, zoomOut } = useReactFlow()
+  const zoom = useStore((s: any) =>
+    Array.isArray(s.transform) ? s.transform[2] : s.viewport?.zoom
+  )
+  
+  const currentZoom = Math.round(((zoom as number) || 1) * 100)
+  
+  return (
+    <div className='absolute bottom-6 left-1/2 -translate-x-1/2 z-10'>
+      <div className='flex items-center gap-1 rounded-[14px] border bg-card/95 p-1 shadow-lg backdrop-blur-sm'>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant='ghost'
+              size='icon'
+              onClick={() => zoomOut({ duration: 200 })}
+              disabled={currentZoom <= 10}
+              className={cn(
+                'h-9 w-9 rounded-[10px]',
+                'hover:bg-muted/80',
+                'disabled:cursor-not-allowed disabled:opacity-50'
+              )}
+            >
+              <Minus className='h-4 w-4' />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Zoom Out</TooltipContent>
+        </Tooltip>
+
+        <div className='flex w-12 items-center justify-center font-medium text-muted-foreground text-sm'>
+          {currentZoom}%
+        </div>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant='ghost'
+              size='icon'
+              onClick={() => zoomIn({ duration: 200 })}
+              disabled={currentZoom >= 200}
+              className={cn(
+                'h-9 w-9 rounded-[10px]',
+                'hover:bg-muted/80',
+                'disabled:cursor-not-allowed disabled:opacity-50'
+              )}
+            >
+              <Plus className='h-4 w-4' />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Zoom In</TooltipContent>
+        </Tooltip>
+      </div>
+    </div>
+  )
+}
 
 interface WorkflowPreviewProps {
   workflowState: WorkflowState
@@ -38,6 +103,7 @@ interface WorkflowPreviewProps {
   pausedBlockId?: string | null
   isPaused?: boolean
   triggerBlockId?: string | null
+  showZoomControls?: boolean
 }
 
 // Define node types - the components now handle preview mode internally
@@ -66,6 +132,7 @@ export function WorkflowPreview({
   pausedBlockId = null,
   isPaused = false,
   triggerBlockId = null,
+  showZoomControls = false,
 }: WorkflowPreviewProps) {
   // Check if the workflow state is valid
   const isValidWorkflowState = workflowState?.blocks && workflowState.edges
@@ -351,7 +418,7 @@ export function WorkflowPreview({
 
   return (
     <ReactFlowProvider>
-      <div style={{ height, width }} className={cn('preview-mode')}>
+      <div style={{ height, width }} className={cn('preview-mode relative')}>
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -391,6 +458,7 @@ export function WorkflowPreview({
             style={{ backgroundColor: 'hsl(var(--workflow-background))' }}
           />
         </ReactFlow>
+        <ZoomControls showControls={showZoomControls} />
       </div>
     </ReactFlowProvider>
   )

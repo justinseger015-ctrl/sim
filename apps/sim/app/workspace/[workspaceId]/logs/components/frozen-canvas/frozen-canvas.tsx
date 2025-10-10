@@ -391,6 +391,7 @@ interface FrozenCanvasProps {
   height?: string | number
   width?: string | number
   onBlockClick?: (blockId: string) => void
+  showZoomControls?: boolean
 }
 
 export function FrozenCanvas({
@@ -400,6 +401,7 @@ export function FrozenCanvas({
   height = '100%',
   width = '100%',
   onBlockClick,
+  showZoomControls = false,
 }: FrozenCanvasProps) {
   const [data, setData] = useState<FrozenCanvasData | null>(null)
   const [blockExecutions, setBlockExecutions] = useState<Record<string, any>>({})
@@ -650,6 +652,7 @@ export function FrozenCanvas({
           pausedBlockId={(data as any).executionMetadata?.pausedBlockId}
           isPaused={(data as any).executionMetadata?.isPaused}
           triggerBlockId={(data as any).executionMetadata?.triggerBlockId}
+          showZoomControls={showZoomControls}
         />
       </div>
 

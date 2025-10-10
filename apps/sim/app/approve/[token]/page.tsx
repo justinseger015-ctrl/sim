@@ -698,6 +698,7 @@ export default function ApprovalPage() {
             height="100%"
             width="100%"
             onBlockClick={setSelectedBlockId}
+            showZoomControls={true}
           />
         </div>
 
