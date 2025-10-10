@@ -60,8 +60,15 @@ export class LoopBlockHandler implements BlockHandler {
         )
       }
 
-      forEachItems = await this.evaluateForEachItems(loop.forEachItems, context, block)
-      logger.info(`Evaluated forEach items for loop ${block.id}:`, forEachItems)
+      // Check if items are already cached (e.g., after resume from HITL pause)
+      const cachedItems = context.loopItems.get(`${block.id}_items`)
+      if (cachedItems) {
+        forEachItems = cachedItems
+        logger.info(`Using cached forEach items for loop ${block.id} (after resume):`, forEachItems)
+      } else {
+        forEachItems = await this.evaluateForEachItems(loop.forEachItems, context, block)
+        logger.info(`Evaluated forEach items for loop ${block.id}:`, forEachItems)
+      }
 
       if (
         !forEachItems ||
@@ -208,7 +215,7 @@ export class LoopBlockHandler implements BlockHandler {
 
         // If we have a resolver, use it to resolve any variable references first, then block references
         if (this.resolver) {
-          const resolvedVars = this.resolver.resolveVariableReferences(forEachItems, block)
+          const resolvedVars = this.resolver.resolveVariableReferences(forEachItems, block, context)
           const resolved = this.resolver.resolveBlockReferences(resolvedVars, context, block)
 
           // Try to parse the resolved value

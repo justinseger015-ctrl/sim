@@ -219,10 +219,20 @@ export class VariableManager {
     if (value === null) return 'null'
     if (value === undefined) return 'undefined'
 
-    // For plain text, use exactly what the user typed, without any conversion
-    // This may cause JavaScript errors if they don't enter valid JS code
+    // For plain text, check if already a valid quoted string, otherwise quote it
+    // This ensures plain variables work correctly in function blocks without errors
     if (type === 'plain') {
-      return typeof value === 'string' ? value : String(value)
+      if (typeof value === 'string') {
+        // Check if already a valid quoted string (starts and ends with quotes)
+        const trimmed = value.trim()
+        const isAlreadyQuoted = 
+          (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+          (trimmed.startsWith("'") && trimmed.endsWith("'"))
+        
+        // If already quoted, return as-is; otherwise quote it
+        return isAlreadyQuoted ? trimmed : JSON.stringify(value)
+      }
+      return JSON.stringify(String(value))
     }
     if (type === 'string') {
       return typeof value === 'string'

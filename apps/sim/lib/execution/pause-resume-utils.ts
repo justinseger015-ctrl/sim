@@ -158,7 +158,10 @@ export function deserializeExecutionContext(serialized: any): ExecutionContext {
   // Reconstruct parallelExecutions Map - handle both array and object formats for nested Maps/Sets
   const parallelExecutions = serialized.parallelExecutions
     ? (new Map(
-        serialized.parallelExecutions.map((item: any) => [
+        (Array.isArray(serialized.parallelExecutions)
+          ? serialized.parallelExecutions
+          : Object.values(serialized.parallelExecutions)
+        ).map((item: any) => [
           item.id,
           {
             parallelCount: item.parallelCount,
@@ -184,7 +187,10 @@ export function deserializeExecutionContext(serialized: any): ExecutionContext {
   // Reconstruct loopExecutions Map - handle both array and object formats for nested Maps
   const loopExecutions = serialized.loopExecutions
     ? (new Map(
-        serialized.loopExecutions.map((item: any) => [
+        (Array.isArray(serialized.loopExecutions)
+          ? serialized.loopExecutions
+          : Object.values(serialized.loopExecutions)
+        ).map((item: any) => [
           item.id,
           {
             maxIterations: item.maxIterations,

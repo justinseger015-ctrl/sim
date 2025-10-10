@@ -132,11 +132,17 @@ export class WorkflowBlockHandler implements BlockHandler {
       const childExecutionId = uuidv4()
       
       // Execute child workflow inline
+      // Merge parent's workflowVariables with child's variables (parent takes precedence for shared variables)
+      const mergedVariables = {
+        ...(childWorkflow.variables || {}),
+        ...(context.workflowVariables || {}),
+      }
+      
       const subExecutor = new Executor({
         workflow: childWorkflow.serializedState,
         workflowInput: childWorkflowInput,
         envVarValues: context.environmentVariables,
-        workflowVariables: childWorkflow.variables || {},
+        workflowVariables: mergedVariables,
         contextExtensions: {
           executionId: childExecutionId, // Child needs its own execution ID
           workspaceId: context.workspaceId, // Inherit workspace from parent
@@ -161,6 +167,23 @@ export class WorkflowBlockHandler implements BlockHandler {
       const result = await subExecutor.execute(workflowId)
       const executionResult = this.toExecutionResult(result)
       const duration = performance.now() - startTime
+
+      // Copy child's updated workflowVariables back to parent context
+      // This allows Variables blocks in child workflows to update parent variables
+      if (result.metadata?.context) {
+        const childContext = result.metadata.context as ExecutionContext
+        if (childContext.workflowVariables) {
+          // Update parent's workflowVariables with any changes from child
+          context.workflowVariables = {
+            ...context.workflowVariables,
+            ...childContext.workflowVariables,
+          }
+          
+          logger.debug('Copied updated workflowVariables from child to parent', {
+            childVariables: Object.values(childContext.workflowVariables).map((v: any) => v.name),
+          })
+        }
+      }
 
       // Check if child execution paused (e.g., due to HITL/wait block)
       if (result?.success && result.metadata?.isPaused) {

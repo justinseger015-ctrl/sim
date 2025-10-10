@@ -34,6 +34,7 @@ import {
   TimeInput,
   ToolInput,
   TriggerConfig,
+  VariablesInput,
   WaitStatus,
   WebhookConfig,
   WebhookResumeConfig,
@@ -462,6 +463,18 @@ export function SubBlock({
             isConnecting={isConnecting}
             config={config}
             showValue={true}
+          />
+        )
+      }
+      case 'variables-input': {
+        return (
+          <VariablesInput
+            blockId={blockId}
+            subBlockId={config.id}
+            isPreview={isPreview}
+            previewValue={previewValue}
+            disabled={isDisabled}
+            isConnecting={isConnecting}
           />
         )
       }

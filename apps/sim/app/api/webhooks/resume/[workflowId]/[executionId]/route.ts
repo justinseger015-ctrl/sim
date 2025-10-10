@@ -321,12 +321,18 @@ export async function POST(
         }
       }
       
+      logger.info(`[${requestId}] Restoring workflow variables from paused state`, {
+        executionId,
+        variableCount: Object.keys(resumeData.executionContext.workflowVariables || {}).length,
+        variableIds: Object.keys(resumeData.executionContext.workflowVariables || {}),
+      })
+      
       const executorData = Executor.createFromPausedState(
         workflowStateToUse,
         resumeData.executionContext,
         resumeData.environmentVariables,
         resumeData.workflowInput,
-        {},
+        resumeData.executionContext.workflowVariables || {},
         {
           executionId: executionId,
           workspaceId: workflowData.workspaceId,

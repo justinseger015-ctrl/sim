@@ -412,7 +412,7 @@ export class ParallelBlockHandler implements BlockHandler {
 
         // If we have a resolver, use it to resolve any variable references first, then block references
         if (this.resolver) {
-          const resolvedVars = this.resolver.resolveVariableReferences(distribution, block)
+          const resolvedVars = this.resolver.resolveVariableReferences(distribution, block, context)
           const resolved = this.resolver.resolveBlockReferences(resolvedVars, context, block)
 
           // Try to parse the resolved value

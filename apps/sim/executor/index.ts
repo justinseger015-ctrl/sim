@@ -16,6 +16,7 @@ import {
   ResponseBlockHandler,
   RouterBlockHandler,
   TriggerBlockHandler,
+  VariablesBlockHandler,
   WaitBlockHandler,
   WorkflowBlockHandler,
 } from '@/executor/handlers'
@@ -231,6 +232,7 @@ export class Executor {
       new LoopBlockHandler(this.resolver, this.pathTracker),
       new ParallelBlockHandler(this.resolver, this.pathTracker),
       new ResponseBlockHandler(),
+      new VariablesBlockHandler(),
       new WorkflowBlockHandler(),
       new GenericBlockHandler(),
     ]
@@ -668,6 +670,11 @@ export class Executor {
       let hasMoreLayers = true
       let iteration = 0
       const maxIterations = 500 // Safety limit for infinite loops
+
+      // Await trigger console promise to prevent race condition with fast blocks
+      if ((context as any)._triggerConsolePromise) {
+        await (context as any)._triggerConsolePromise
+      }
 
       while (hasMoreLayers && iteration < maxIterations && !this.isCancelled && !this.isPaused) {
         const nextLayer = this.getNextExecutionLayer(context)
@@ -1532,29 +1539,29 @@ export class Executor {
         context.blockLogs.push(triggerLog)
         
         // Add trigger to console immediately (client-side only)
+        // Store the promise to ensure it completes before downstream blocks add their entries
         if (typeof window !== 'undefined') {
-          try {
-            import('@/stores/panel/console/store').then(({ useConsoleStore }) => {
-              useConsoleStore.getState().addConsole({
-                input: triggerLog.input || {},
-                output: triggerLog.output || {},
-                success: true,
-                error: undefined,
-                durationMs: 0,
-                startedAt: triggerLog.startedAt,
-                endedAt: triggerLog.endedAt,
-                workflowId: context.workflowId,
-                blockId: initBlock.id,
-                executionId: this.contextExtensions.executionId,
-                blockName: triggerLog.blockName,
-                blockType: triggerLog.blockType,
-              })
-            }).catch(err => {
-              logger.error('Failed to add trigger to console', err)
+          const consolePromise = import('@/stores/panel/console/store').then(({ useConsoleStore }) => {
+            useConsoleStore.getState().addConsole({
+              input: triggerLog.input || {},
+              output: triggerLog.output || {},
+              success: true,
+              error: undefined,
+              durationMs: 0,
+              startedAt: triggerLog.startedAt,
+              endedAt: triggerLog.endedAt,
+              workflowId: context.workflowId,
+              blockId: initBlock.id,
+              executionId: this.contextExtensions.executionId,
+              blockName: triggerLog.blockName,
+              blockType: triggerLog.blockType,
             })
-          } catch (err) {
-            logger.error('Failed to import console store', err)
-          }
+          }).catch(err => {
+            logger.error('Failed to add trigger to console', err)
+          })
+          
+          // Store the promise on context so execute() can await it before proceeding
+          ;(context as any)._triggerConsolePromise = consolePromise
         }
         
         logger.debug('Created trigger block log', {

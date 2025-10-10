@@ -220,7 +220,7 @@ export class InputResolver {
         const directVariableMatch = trimmedValue.match(/^<variable\.([^>]+)>$/)
         if (directVariableMatch) {
           const variableName = directVariableMatch[1]
-          const variable = this.findVariableByName(variableName)
+          const variable = this.findVariableByName(variableName, context)
 
           if (variable) {
             // Return the typed value directly
@@ -367,16 +367,12 @@ export class InputResolver {
       // Handle 'string' type the same as 'plain' for backward compatibility
       const normalizedType = type === 'string' ? 'plain' : type
 
-      // For plain text, use exactly what's entered without modifications
-      if (normalizedType === 'plain' && typeof value === 'string') {
-        return value
-      }
-
       // Determine if this needs special handling for code contexts
       const needsCodeStringLiteral = this.needsCodeStringLiteral(currentBlock, String(value))
       const isFunctionBlock = currentBlock?.metadata?.id === 'function'
 
       // Always use code formatting for function blocks
+      // This ensures plain text variables are properly quoted in function code
       if (isFunctionBlock || needsCodeStringLiteral) {
         return VariableManager.formatForCodeContext(value, normalizedType as any)
       }
@@ -393,9 +389,10 @@ export class InputResolver {
    *
    * @param value - String containing variable references
    * @param currentBlock - The current block, used to determine context
+   * @param context - Execution context for runtime variable values
    * @returns String with resolved variable references
    */
-  resolveVariableReferences(value: string, currentBlock?: SerializedBlock): string {
+  resolveVariableReferences(value: string, currentBlock?: SerializedBlock, context?: ExecutionContext): string {
     // Added check: If value is not a string, return it directly.
     // This can happen if a prior resolution step (like block reference) returned a non-string.
     if (typeof value !== 'string') {
@@ -410,8 +407,8 @@ export class InputResolver {
     for (const match of variableMatches) {
       const variableName = match.slice('<variable.'.length, -1)
 
-      // Find the variable using our helper method
-      const variable = this.findVariableByName(variableName)
+      // Find the variable using our helper method (use runtime context if available)
+      const variable = this.findVariableByName(variableName, context)
 
       if (variable) {
         // Get the actual typed value
@@ -910,8 +907,8 @@ export class InputResolver {
 
     // Handle strings
     if (typeof value === 'string') {
-      // First resolve variable references
-      const resolvedVars = this.resolveVariableReferences(value, currentBlock)
+      // First resolve variable references (pass context for runtime variables)
+      const resolvedVars = this.resolveVariableReferences(value, currentBlock, context)
 
       // Then resolve block references
       const resolvedReferences = this.resolveBlockReferences(resolvedVars, context, currentBlock)
@@ -1025,8 +1022,12 @@ export class InputResolver {
    * @param variableName - The name of the variable to find
    * @returns The found variable object or undefined if not found
    */
-  private findVariableByName(variableName: string): any | undefined {
-    const foundVariable = Object.entries(this.workflowVariables).find(
+  private findVariableByName(variableName: string, context?: ExecutionContext): any | undefined {
+    // Use runtime context.workflowVariables if available (for dynamic updates)
+    // Otherwise fall back to static this.workflowVariables
+    const variablesSource = context?.workflowVariables || this.workflowVariables
+    
+    const foundVariable = Object.entries(variablesSource).find(
       ([_, variable]) => (variable.name || '').replace(/\s+/g, '') === variableName
     )
 
@@ -1733,8 +1734,8 @@ export class InputResolver {
     context: ExecutionContext,
     block: SerializedBlock
   ): any {
-    // First resolve variable references (interpolation)
-    const resolvedVars = this.resolveVariableReferences(value, block)
+    // First resolve variable references (interpolation, pass context for runtime variables)
+    const resolvedVars = this.resolveVariableReferences(value, block, context)
 
     // Then resolve block references
     const resolvedReferences = this.resolveBlockReferences(resolvedVars, context, block)
@@ -1786,7 +1787,7 @@ export class InputResolver {
 
               if (directVariableMatch) {
                 const variableName = directVariableMatch[1]
-                const variable = this.findVariableByName(variableName)
+                const variable = this.findVariableByName(variableName, context)
 
                 if (variable) {
                   acc[cellKey] = this.getTypedVariableValue(variable)
