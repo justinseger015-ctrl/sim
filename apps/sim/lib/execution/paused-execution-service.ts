@@ -122,6 +122,8 @@ export class PausedExecutionService {
       blockStatesKeys: context.blockStates instanceof Map 
         ? Array.from(context.blockStates.keys())
         : Object.keys(context.blockStates || {}),
+      loopIterationsSize: context.loopIterations instanceof Map ? context.loopIterations.size : 0,
+      loopIterations: context.loopIterations instanceof Map ? Array.from(context.loopIterations.entries()) : context.loopIterations,
     })
     
     if (context.blockStates instanceof Map) {
@@ -133,6 +135,8 @@ export class PausedExecutionService {
       logger.info('Context already serialized from client', {
         executionId,
         blockStatesLength: (context as any).blockStates.length,
+        loopIterationsLength: (context as any).loopIterations?.length || 0,
+        loopIterations: (context as any).loopIterations,
       })
     } else {
       // Legacy: Client-side with Maps as plain objects - convert to proper format

@@ -193,9 +193,30 @@ export async function POST(
       variableIds: Object.keys(resumeData.executionContext.workflowVariables || {}),
     })
     
+    // Get the paused block info early for use in contextExtensions
+    const pausedWaitBlockInfo = (resumeData.executionContext as any).waitBlockInfo || resumeData.metadata?.waitBlockInfo
+    
+    const resumeContext = resumeData.executionContext
+
+    if (!(resumeContext.executedBlocks instanceof Set)) {
+      resumeContext.executedBlocks = new Set(
+        Array.isArray(resumeContext.executedBlocks)
+          ? resumeContext.executedBlocks
+          : []
+      )
+    }
+
+    if (!(resumeContext.activeExecutionPath instanceof Set)) {
+      resumeContext.activeExecutionPath = new Set(
+        Array.isArray(resumeContext.activeExecutionPath)
+          ? resumeContext.activeExecutionPath
+          : []
+      )
+    }
+
     const { executor, context } = Executor.createFromPausedState(
       resumeData.workflowState,
-      resumeData.executionContext,
+      resumeContext,
       resumeData.environmentVariables,
       resumeData.workflowInput,
       resumeData.executionContext.workflowVariables || {},
@@ -203,12 +224,14 @@ export async function POST(
         executionId: executionId,
         workspaceId: workflowData.workspaceId,
         isDeployedContext: resumeData.metadata?.isDeployedContext || false,
-        ...(resumeType === 'api' && { resumeInput }), // Pass the API payload as resumeInput
+        isResuming: true, // Mark that this is a resume operation
+        resumedBlockId: pausedWaitBlockInfo?.blockId, // Mark which specific block is being resumed
+        // Pass resumeInput for both API and human modes (contains custom form data)
+        ...((resumeType === 'api' || resumeType === 'human') && { resumeInput }),
       }
     )
 
     // Clear pause flags so the resumed executor can continue
-    const pausedWaitBlockInfo = (context as any).waitBlockInfo || context.metadata?.waitBlockInfo
     if ((context as any).shouldPauseAfterBlock) {
       delete (context as any).shouldPauseAfterBlock
       delete (context as any).pauseReason
@@ -247,17 +270,36 @@ export async function POST(
           const { approved, approvedAt, approvalToken, ...customFields } = resumeInput
           const approveUrl = approvalToken ? `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/approve/${approvalToken}` : existingBlockState.output?.approveUrl
           
+          logger.info('Processing human mode resume input', {
+            blockId: pausedWaitBlockInfo.blockId,
+            resumeInputKeys: Object.keys(resumeInput),
+            approved,
+            approvedAt,
+            approvalToken,
+            customFields,
+            customFieldsKeys: Object.keys(customFields),
+          })
+          
           updatedOutput = {
             approveUrl,
             waitDuration: 0,
             ...(typeof approved === 'boolean' && { approved }), // Include approved if present
-            ...customFields, // Add custom form fields
+            ...customFields, // Add custom form fields (like feedback)
           }
           
           // Include content if it was in the original output
           if (existingBlockState.output?.content) {
             updatedOutput.content = existingBlockState.output.content
           }
+          
+          logger.info('Updated HITL output for human mode', {
+            blockId: pausedWaitBlockInfo.blockId,
+            hasApproved: typeof approved === 'boolean',
+            customFieldsCount: Object.keys(customFields).length,
+            customFieldNames: Object.keys(customFields),
+            finalOutputKeys: Object.keys(updatedOutput),
+            updatedOutput,
+          })
         } else if (resumeType === 'webhook') {
           // For webhook mode: add webhook payload data
           updatedOutput = {

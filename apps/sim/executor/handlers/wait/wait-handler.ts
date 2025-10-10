@@ -197,8 +197,12 @@ export class WaitBlockHandler implements BlockHandler {
     // Check if we're resuming from a webhook trigger
     const isResuming = (context as any).isResuming
     const resumeInput = (context as any).resumeInput
+    const resumedBlockId = (context as any).resumedBlockId
     
-    if (isResuming && resumeTriggerType === 'webhook') {
+    // Only use resumeInput if it's meant for THIS specific block
+    const isThisBlockBeingResumed = isResuming && resumedBlockId === block.id
+    
+    if (isThisBlockBeingResumed && resumeTriggerType === 'webhook') {
       logger.info(`Wait block resumed via webhook`, {
         blockId: block.id,
         hasResumeInput: !!resumeInput,
@@ -211,7 +215,7 @@ export class WaitBlockHandler implements BlockHandler {
     }
 
     // Check if we're resuming from a human approval
-    if (isResuming && resumeTriggerType === 'human') {
+    if (isThisBlockBeingResumed && resumeTriggerType === 'human') {
       logger.info(`Wait block resumed via human approval`, {
         blockId: block.id,
         blockName: block.metadata?.name,
@@ -235,22 +239,28 @@ export class WaitBlockHandler implements BlockHandler {
           output.content = inputs.content
         }
         
-        // Check if this is approval mode or custom mode based on presence of 'approved' field
+        // Include approved field if present (approval mode)
         if (typeof approved === 'boolean') {
-          // Approval mode
           output.approved = approved
-        } else {
-          // Custom mode - include all custom fields
-          Object.assign(output, customFields)
         }
+        
+        // Always include custom fields regardless of approval mode
+        // This allows custom forms to work even when approved field is present
+        Object.assign(output, customFields)
         
         logger.info('Returning human approval output', {
           blockId: block.id,
           blockName: block.metadata?.name,
           hasApproved: typeof approved === 'boolean',
           customFieldsCount: Object.keys(customFields).length,
+          customFields: customFields,
           outputKeys: Object.keys(output),
         })
+        
+        // Clear resume flags IMMEDIATELY after consumption
+        ;(context as any).resumeInput = null
+        ;(context as any).isResuming = false
+        ;(context as any).resumedBlockId = null
         
         return output
       }
@@ -262,7 +272,7 @@ export class WaitBlockHandler implements BlockHandler {
     }
 
     // Check if we're resuming from an API approval
-    if (isResuming && resumeTriggerType === 'api') {
+    if (isThisBlockBeingResumed && resumeTriggerType === 'api') {
       logger.info(`Wait block resumed via API approval`, {
         blockId: block.id,
         blockName: block.metadata?.name,
@@ -288,6 +298,11 @@ export class WaitBlockHandler implements BlockHandler {
           blockName: block.metadata?.name,
           outputKeys: Object.keys(output),
         })
+        
+        // Clear resume flags IMMEDIATELY after consumption
+        ;(context as any).resumeInput = null
+        ;(context as any).isResuming = false
+        ;(context as any).resumedBlockId = null
         
         return output
       }
@@ -812,24 +827,9 @@ export class WaitBlockHandler implements BlockHandler {
           })
 
           try {
-            // Serialize Sets to arrays for JSON transmission
-            const serializedContext = {
-              ...context,
-              executedBlocks: context.executedBlocks instanceof Set 
-                ? Array.from(context.executedBlocks) 
-                : context.executedBlocks,
-              activeExecutionPath: context.activeExecutionPath instanceof Set
-                ? Array.from(context.activeExecutionPath)
-                : context.activeExecutionPath,
-              blockStates: context.blockStates instanceof Map
-                ? Array.from(context.blockStates.entries()).map(([blockId, state]) => ({
-                    blockId,
-                    output: state.output,
-                    executed: state.executed,
-                    executionTime: state.executionTime,
-                  }))
-                : context.blockStates,
-            }
+            // Use proper serialization to preserve ALL context including loop state
+            const { serializeExecutionContext } = await import('@/lib/execution/pause-resume-utils')
+            const serializedContext = serializeExecutionContext(context)
             
             const response = await fetch('/api/execution/pause', {
               method: 'POST',
@@ -914,9 +914,13 @@ export class WaitBlockHandler implements BlockHandler {
         // Temporarily set the block output in context so notification tools can reference it
         context.blockStates.set(block.id, {
           output,
-          executed: false, // Not fully executed yet
+          executed: true, // Treat as executed once pause metadata is recorded
           executionTime: 0,
         })
+
+        if (!context.executedBlocks.has(block.id)) {
+          context.executedBlocks.add(block.id)
+        }
 
         // Send notification if configured
         const notificationTools = inputs.notificationTool
@@ -1112,6 +1116,10 @@ export class WaitBlockHandler implements BlockHandler {
           })
 
           try {
+            // Use proper serialization to preserve ALL context including loop state
+            const { serializeExecutionContext } = await import('@/lib/execution/pause-resume-utils')
+            const serializedContext = serializeExecutionContext(context)
+            
             const response = await fetch('/api/execution/pause', {
               method: 'POST',
               headers: {
@@ -1121,7 +1129,7 @@ export class WaitBlockHandler implements BlockHandler {
                 workflowId,
                 executionId,
                 blockId: block.id,
-                context,
+                context: serializedContext,
                 pausedAt: new Date(pausedAt).toISOString(),
                 resumeType: 'api',
                 apiInputFormat: inputs.apiInputFormat,

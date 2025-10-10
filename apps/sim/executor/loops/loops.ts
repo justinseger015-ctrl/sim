@@ -50,6 +50,11 @@ export class LoopManager {
         // All blocks in the loop have been executed
         const currentIteration = context.loopIterations.get(loopId) || 1
 
+        logger.info(`Loop ${loopId} - All blocks executed, processing iteration ${currentIteration}`, {
+          loopNodes: loop.nodes,
+          executedBlocks: Array.from(context.executedBlocks),
+        })
+
         // Results are now stored individually as blocks execute (like parallels)
         // No need for bulk collection here
 
@@ -132,15 +137,27 @@ export class LoopManager {
           logger.info(`Loop ${loopId} - Completed and activated end connections`)
         } else {
           context.loopIterations.set(loopId, currentIteration + 1)
-          logger.info(`Loop ${loopId} - Incremented counter to ${currentIteration + 1}`)
+          logger.info(`Loop ${loopId} - Incremented counter to ${currentIteration + 1}`, {
+            newIteration: currentIteration + 1,
+            maxIterations,
+          })
 
           this.resetLoopBlocks(loopId, loop, context)
 
           context.executedBlocks.delete(loopId)
           context.blockStates.delete(loopId)
 
-          logger.info(`Loop ${loopId} - Reset for iteration ${currentIteration + 1}`)
+          logger.info(`Loop ${loopId} - Reset for iteration ${currentIteration + 1}`, {
+            resetBlockIds: loop.nodes,
+            remainingExecutedBlocks: Array.from(context.executedBlocks),
+          })
         }
+      } else {
+        logger.info(`Loop ${loopId} - Not all blocks executed yet`, {
+          loopNodes: loop.nodes,
+          executedInLoop: loop.nodes.filter((id) => context.executedBlocks.has(id)),
+          notExecutedYet: loop.nodes.filter((id) => !context.executedBlocks.has(id)),
+        })
       }
     }
 

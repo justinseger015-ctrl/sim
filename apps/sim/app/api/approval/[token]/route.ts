@@ -199,11 +199,22 @@ export async function POST(
         ? ((execution.metadata as any).logs as any[])
         : []
       const prePauseLogs = metadataLogs.length > 0 ? metadataLogs : Array.isArray(context.blockLogs) ? context.blockLogs : []
+
+      const executedBlocksSet = context.executedBlocks instanceof Set
+        ? new Set(context.executedBlocks)
+        : new Set(Array.isArray(context.executedBlocks) ? context.executedBlocks : [])
+
       for (const log of prePauseLogs) {
         if (log.blockId) {
-          context.executedBlocks.add(log.blockId)
+          executedBlocksSet.add(log.blockId)
         }
       }
+
+      if (blockId) {
+        executedBlocksSet.add(blockId)
+      }
+
+      context.executedBlocks = executedBlocksSet
       
       // Rebuild activeExecutionPath by finding all downstream blocks from executed blocks
       // The executor only processes blocks in activeExecutionPath
@@ -279,28 +290,10 @@ export async function POST(
           executionTime,
         })
         
-        // Mark the block as executed so the executor knows to skip it and continue to next blocks
-        context.executedBlocks.add(blockId)
+        // DON'T mark as executed here - the resume endpoint will handle it
+        // If we add it here, the resume endpoint loads old data without it, causing re-execution
         
-        // Add the HITL block execution to the logs
-        // Find the HITL block metadata from the workflow state
-        const hitlBlock = workflowState.blocks?.find((b: any) => b.id === blockId)
-        
-        context.blockLogs.push({
-          blockId,
-          blockName: hitlBlock?.metadata?.name || 'Human in the Loop',
-          blockType: hitlBlock?.metadata?.id || 'user_approval',
-          startedAt: pausedAt.toISOString(),
-          endedAt: approvedAt.toISOString(),
-          durationMs: executionTime,
-          success: true,
-          input: {
-            resumeTriggerType: 'human',
-          },
-          output: approvalOutput,
-        })
-        
-        logger.info('Marked HITL block as executed in context and added to logs', {
+        logger.info('Updated HITL block state in context (will be executed during resume)', {
           blockId,
           approved,
           executedBlocksSize: context.executedBlocks.size,

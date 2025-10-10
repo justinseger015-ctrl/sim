@@ -313,6 +313,19 @@ export class Executor {
       workflowVariables
     )
 
+    // Apply contextExtensions to the context (especially resumeInput for HITL blocks)
+    if (contextExtensions) {
+      if (contextExtensions.resumeInput) {
+        ;(executionContext as any).resumeInput = contextExtensions.resumeInput
+      }
+      if (contextExtensions.isResuming !== undefined) {
+        ;(executionContext as any).isResuming = contextExtensions.isResuming
+      }
+      if (contextExtensions.resumedBlockId) {
+        ;(executionContext as any).resumedBlockId = contextExtensions.resumedBlockId
+      }
+    }
+
     // Return the executor along with the context to resume from
     return { executor, context: executionContext }
   }
@@ -2273,9 +2286,15 @@ export class Executor {
         }
       }
 
+      const executedBlocksSet = context.executedBlocks instanceof Set
+        ? context.executedBlocks
+        : new Set(Array.isArray(context.executedBlocks) ? context.executedBlocks : [])
+
       blockIds.forEach((blockId) => {
-        context.executedBlocks.add(blockId)
+        executedBlocksSet.add(blockId)
       })
+
+      context.executedBlocks = executedBlocksSet
 
       this.pathTracker.updateExecutionPaths(blockIds, context)
 
@@ -2462,13 +2481,16 @@ export class Executor {
 
         const shouldPause = Boolean((context as any).shouldPauseAfterBlock)
 
-        if (!shouldPause) {
-          context.blockStates.set(blockId, {
-            output,
-            executed: true,
-            executionTime,
-          })
-        }
+        // Always set block state, even when pausing
+        // This ensures the block is marked as executed for resume
+        context.blockStates.set(blockId, {
+          output,
+          executed: true,
+          executionTime,
+        })
+        
+        // Also add to executedBlocks immediately to prevent re-execution on resume
+        context.executedBlocks.add(blockId)
 
         if (parallelInfo) {
           this.parallelManager.storeIterationResult(
@@ -2583,15 +2605,17 @@ export class Executor {
 
       const shouldPauseNonStream = Boolean((context as any).shouldPauseAfterBlock)
 
-      // Update the context with the execution result
+      // Always update the context with the execution result
+      // This ensures the block is marked as executed even when pausing
       // Use virtual block ID for parallel executions
-      if (!shouldPauseNonStream) {
-        context.blockStates.set(blockId, {
-          output,
-          executed: true,
-          executionTime,
-        })
-      }
+      context.blockStates.set(blockId, {
+        output,
+        executed: true,
+        executionTime,
+      })
+      
+      // Also add to executedBlocks immediately to prevent re-execution on resume
+      context.executedBlocks.add(blockId)
 
       // Also store under the actual block ID for reference
       if (parallelInfo) {
@@ -2857,6 +2881,9 @@ export class Executor {
         executed: true,
         executionTime: blockLog.durationMs,
       })
+      
+      // Also add to executedBlocks immediately (even for errors)
+      context.executedBlocks.add(blockId)
 
       const failureEndTime = context.metadata.endTime ?? new Date().toISOString()
       if (!context.metadata.endTime) {
