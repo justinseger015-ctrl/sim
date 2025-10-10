@@ -215,10 +215,7 @@ export function deserializeExecutionContext(serialized: any): ExecutionContext {
 export function serializeWorkflowState(workflow: SerializedWorkflow): any {
   return {
     blocks: workflow.blocks,
-    edges: workflow.connections.map((conn, index) => ({
-      ...conn,
-      id: (conn as any).id || `${conn.source}-${conn.target}-${index}`,
-    })),  // Use edges for WorkflowPreview compatibility and ensure IDs exist
+    connections: workflow.connections,
     loops: workflow.loops,
     parallels: workflow.parallels,
   }

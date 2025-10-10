@@ -420,6 +420,20 @@ export async function executeWorkflow(
       const { pauseResumeService } = await import('@/lib/execution/pause-resume-service')
       
       try {
+        // Check if execution is already paused (by paused-execution-service) and retrieve existing metadata
+        const existingPausedData = await pauseResumeService.getPausedExecutionData(executionId)
+        
+        // Merge existing metadata with new metadata to preserve API-specific fields
+        const mergedMetadata = {
+          ...(existingPausedData?.metadata || {}), // Preserve existing metadata (including resumeTriggerType, apiInputFormat, etc.)
+          waitBlockInfo: result.metadata?.waitBlockInfo,
+          isDeployedContext: true,
+          deploymentVersionId,
+          parentExecutionInfo: (result.metadata?.context as any)?.parentExecutionInfo,
+          // Save block logs from before pause so they can be merged on resume
+          logs: result.logs || [],
+        }
+        
         await pauseResumeService.pauseExecution({
           workflowId,
           executionId,
@@ -428,14 +442,7 @@ export async function executeWorkflow(
           workflowState: serializedWorkflow,
           environmentVariables: decryptedEnvVars,
           workflowInput: processedInput,
-          metadata: {
-            waitBlockInfo: result.metadata?.waitBlockInfo,
-            isDeployedContext: true,
-            deploymentVersionId,
-            parentExecutionInfo: (result.metadata?.context as any)?.parentExecutionInfo,
-            // Save block logs from before pause so they can be merged on resume
-            logs: result.logs || [],
-          },
+          metadata: mergedMetadata,
         })
         logger.info(`[${requestId}] Successfully persisted paused execution state`)
       } catch (pauseError: any) {

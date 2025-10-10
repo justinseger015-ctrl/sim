@@ -13,24 +13,31 @@ import { getUserEntityPermissions } from '@/lib/permissions/utils'
 const logger = createLogger('ResumeExecutionAPI')
 
 /**
- * Helper function to replace <api.fieldName> references with actual values
+ * Helper function to replace <api.fieldName> and <blockName.output> references with actual values
  */
-function replaceApiReferences(obj: any, apiInput: Record<string, any>): any {
+function replaceApiReferences(obj: any, apiInput: Record<string, any>, additionalContext: Record<string, any> = {}): any {
   if (typeof obj === 'string') {
     // Replace <api.fieldName> patterns
-    return obj.replace(/<api\.(\w+)>/g, (match, fieldName) => {
+    let result = obj.replace(/<api\.(\w+)>/g, (match, fieldName) => {
       return apiInput[fieldName] !== undefined ? apiInput[fieldName] : match
     })
+    
+    // Replace <blockName.outputField> patterns with additional context (like resumeUrl)
+    result = result.replace(/<[^>]+\.(\w+)>/g, (match, fieldName) => {
+      return additionalContext[fieldName] !== undefined ? additionalContext[fieldName] : match
+    })
+    
+    return result
   }
   
   if (Array.isArray(obj)) {
-    return obj.map(item => replaceApiReferences(item, apiInput))
+    return obj.map(item => replaceApiReferences(item, apiInput, additionalContext))
   }
   
   if (obj && typeof obj === 'object') {
     const result: any = {}
     for (const [key, value] of Object.entries(obj)) {
-      result[key] = replaceApiReferences(value, apiInput)
+      result[key] = replaceApiReferences(value, apiInput, additionalContext)
     }
     return result
   }
@@ -126,6 +133,13 @@ export async function POST(
     let resumeInput: any = {}
     const resumeType = (resumeData.metadata as any)?.resumeTriggerType
     
+    logger.info('Resume metadata check', {
+      executionId,
+      resumeType,
+      metadataKeys: Object.keys(resumeData.metadata || {}),
+      waitBlockInfo: (resumeData.metadata as any)?.waitBlockInfo,
+    })
+    
     if (resumeType === 'api') {
       // Parse and validate the API payload against the defined input schema
       try {
@@ -175,6 +189,7 @@ export async function POST(
     )
 
     // Clear pause flags so the resumed executor can continue
+    const pausedWaitBlockInfo = (context as any).waitBlockInfo || context.metadata?.waitBlockInfo
     if ((context as any).shouldPauseAfterBlock) {
       delete (context as any).shouldPauseAfterBlock
       delete (context as any).pauseReason
@@ -184,6 +199,34 @@ export async function POST(
     }
     if (context.metadata?.waitBlockInfo) {
       delete (context.metadata as any).waitBlockInfo
+    }
+
+    // For API resume, update the HITL block's state with the resume input
+    // so downstream blocks can reference the API input fields
+    if (resumeType === 'api' && pausedWaitBlockInfo?.blockId && Object.keys(resumeInput).length > 0) {
+      const existingBlockState = context.blockStates.get(pausedWaitBlockInfo.blockId)
+      
+      if (existingBlockState) {
+        // Update the block state output to include the API input fields
+        const { getBaseUrl } = await import('@/lib/urls/utils')
+        const baseUrl = getBaseUrl()
+        const updatedOutput = {
+          resumeUrl: `${baseUrl}/api/workflows/${workflowId}/executions/resume/${executionId}`,
+          waitDuration: 0,
+          ...resumeInput, // Add all API input fields to the block output
+        }
+        
+        context.blockStates.set(pausedWaitBlockInfo.blockId, {
+          ...existingBlockState,
+          output: updatedOutput,
+        })
+        
+        logger.info('Updated HITL block state with API resume input', {
+          blockId: pausedWaitBlockInfo.blockId,
+          resumeInputKeys: Object.keys(resumeInput),
+          outputKeys: Object.keys(updatedOutput),
+        })
+      }
     }
 
     // Track which blocks were already executed before resume
@@ -483,76 +526,23 @@ export async function POST(
       }
     }
     
-    // For API resume type, return the custom configured response to the API caller
+    // For API resume type, return the actual workflow execution output
+    // The HITL block's API response config was used during the initial pause, not on resume
     if (resumeType === 'api' && isApiAuth) {
-      const metadata = resumeData.metadata as any
-      const apiResponseMode = metadata?.apiResponseMode || 'json'
-      
-      let responseData: any = {
-        success: true,
-        message: 'Workflow resumed successfully',
-      }
-      
-      // Build custom response based on configuration
-      // The response can reference the API inputs using <api.fieldName>
-      if (apiResponseMode === 'json' && metadata?.apiEditorResponse) {
-        // Editor mode: Use the JSON response template
-        try {
-          let editorResponse = metadata.apiEditorResponse
-          
-          // If it's a string, parse it
-          if (typeof editorResponse === 'string') {
-            editorResponse = JSON.parse(editorResponse)
-          }
-          
-          // Replace <api.fieldName> references with actual values from resumeInput
-          const resolvedResponse = replaceApiReferences(editorResponse, resumeInput)
-          responseData = resolvedResponse
-        } catch (parseError) {
-          logger.warn('Failed to parse/resolve API editor response, using default', { parseError })
-          responseData = { ...responseData, ...resumeInput }
-        }
-      } else if (apiResponseMode === 'structured' && metadata?.apiBuilderResponse) {
-        // Builder mode: Use the structured response
-        // Resolve any API references in the builder data
-        const resolvedResponse = replaceApiReferences(metadata.apiBuilderResponse, resumeInput)
-        responseData = resolvedResponse
-      } else {
-        // Default: return the API input as confirmation
-        responseData = {
-          ...responseData,
-          data: resumeInput,
-        }
-      }
-      
-      // Get custom status code and headers if configured
-      const statusCode = metadata?.apiStatus ? parseInt(String(metadata.apiStatus), 10) : 200
-      const customHeaders: Record<string, string> = {}
-      
-      if (metadata?.apiHeaders && Array.isArray(metadata.apiHeaders)) {
-        // Convert table format to header object
-        for (const header of metadata.apiHeaders) {
-          if (header.key && header.value) {
-            customHeaders[header.key] = header.value
-          }
-        }
-      }
-      
-      logger.info('Returning custom API response to caller', {
+      logger.info('Returning workflow execution result for API resume', {
         executionId,
-        responseMode: apiResponseMode,
-        responseKeys: Object.keys(responseData),
-        statusCode,
-        customHeaders: Object.keys(customHeaders),
+        success: executionResult.success,
+        hasOutput: !!executionResult.output,
       })
       
-      return NextResponse.json(responseData, {
-        status: statusCode,
-        headers: customHeaders,
-      })
+      // Return the actual workflow output (from Response block or final block)
+      // If there's a response block output, use that; otherwise use the execution output
+      const finalOutput = executionResult.output?.response || executionResult.output || {}
+      
+      return NextResponse.json(finalOutput)
     }
     
-    // For non-API resume (webhook, manual), return standard response
+    // For non-API resume (webhook, manual), return standard response with metadata
     return NextResponse.json({
       success: executionResult.success,
       output: executionResult.output,
