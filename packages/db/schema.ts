@@ -216,8 +216,6 @@ export const workflowEdges = pgTable(
   },
   (table) => ({
     workflowIdIdx: index('workflow_edges_workflow_id_idx').on(table.workflowId),
-    sourceBlockIdx: index('workflow_edges_source_block_idx').on(table.sourceBlockId),
-    targetBlockIdx: index('workflow_edges_target_block_idx').on(table.targetBlockId),
     workflowSourceIdx: index('workflow_edges_workflow_source_idx').on(
       table.workflowId,
       table.sourceBlockId

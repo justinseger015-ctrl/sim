@@ -1,1 +1,0 @@
-CREATE INDEX "workflow_execution_logs_state_snapshot_id_idx" ON "workflow_execution_logs" USING btree ("state_snapshot_id");
