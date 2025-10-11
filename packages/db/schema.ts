@@ -306,6 +306,9 @@ export const workflowExecutionLogs = pgTable(
   (table) => ({
     workflowIdIdx: index('workflow_execution_logs_workflow_id_idx').on(table.workflowId),
     executionIdIdx: index('workflow_execution_logs_execution_id_idx').on(table.executionId),
+    stateSnapshotIdIdx: index('workflow_execution_logs_state_snapshot_id_idx').on(
+      table.stateSnapshotId
+    ),
     triggerIdx: index('workflow_execution_logs_trigger_idx').on(table.trigger),
     levelIdx: index('workflow_execution_logs_level_idx').on(table.level),
     startedAtIdx: index('workflow_execution_logs_started_at_idx').on(table.startedAt),
