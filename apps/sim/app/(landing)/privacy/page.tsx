@@ -23,8 +23,8 @@ export default function PrivacyPolicy() {
         </p>
         <p className='mt-4'>
           By using or accessing the Service, you confirm that you have read and understood this
-          Privacy Policy, and you consent to the collection, use, and disclosure of your
-          information as described herein.
+          Privacy Policy, and you consent to the collection, use, and disclosure of your information
+          as described herein.
         </p>
       </section>
 
@@ -178,8 +178,8 @@ export default function PrivacyPolicy() {
           <li>Other Google Workspace content or metadata as needed per feature</li>
         </ul>
         <p className='mb-4'>
-          We only request the minimal scopes necessary for the features you enable. We do not request
-          scopes for unimplemented features.
+          We only request the minimal scopes necessary for the features you enable. We do not
+          request scopes for unimplemented features.
         </p>
 
         <h3 className='mb-2 font-medium text-xl'>Usage Data</h3>
@@ -332,10 +332,10 @@ export default function PrivacyPolicy() {
       <section>
         <h2 className='mb-4 font-semibold text-2xl'>8. Analytics</h2>
         <p className='mb-4'>
-          We may aggregate or anonymize non-Google data (not tied to personal identity) for
-          internal analytics, product improvement, usage trends, or performance monitoring. This
-          data cannot be tied back to individual users and is not used for generalized AI/ML
-          training with Google Data.
+          We may aggregate or anonymize non-Google data (not tied to personal identity) for internal
+          analytics, product improvement, usage trends, or performance monitoring. This data cannot
+          be tied back to individual users and is not used for generalized AI/ML training with
+          Google Data.
         </p>
       </section>
 
@@ -387,7 +387,9 @@ export default function PrivacyPolicy() {
       </section>
 
       <section>
-        <h2 className='mb-4 font-semibold text-2xl'>11. Use of Google / Workspace APIs & Data — Limited Use</h2>
+        <h2 className='mb-4 font-semibold text-2xl'>
+          11. Use of Google / Workspace APIs & Data — Limited Use
+        </h2>
         <h3 className='mb-2 font-medium text-xl'>Affirmative Statement & Compliance</h3>
         <p className='mb-4'>
           Sim’s use, storage, processing, and transfer of Google Data (raw or derived) strictly
