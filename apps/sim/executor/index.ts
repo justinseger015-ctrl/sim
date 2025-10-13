@@ -324,6 +324,22 @@ export class Executor {
       if (contextExtensions.resumedBlockId) {
         ;(executionContext as any).resumedBlockId = contextExtensions.resumedBlockId
       }
+      if (contextExtensions.parentExecutionInfo?.loopIterations) {
+        const parentLoopIterations = contextExtensions.parentExecutionInfo.loopIterations
+        if (Array.isArray(parentLoopIterations)) {
+          parentLoopIterations.forEach(([loopId, iteration]: [string, number]) => {
+            executionContext.loopIterations.set(loopId, iteration)
+          })
+        }
+      }
+      if (contextExtensions.parentExecutionInfo?.loopItems) {
+        const parentLoopItems = contextExtensions.parentExecutionInfo.loopItems
+        if (Array.isArray(parentLoopItems)) {
+          parentLoopItems.forEach(([key, value]: [string, any]) => {
+            executionContext.loopItems.set(key, value)
+          })
+        }
+      }
     }
 
     // Return the executor along with the context to resume from

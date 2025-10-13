@@ -138,6 +138,14 @@ export class WorkflowBlockHandler implements BlockHandler {
         ...(context.workflowVariables || {}),
       }
       
+      const parentLoopIterations = context.loopIterations instanceof Map
+        ? Array.from(context.loopIterations.entries())
+        : []
+
+      const parentLoopItems = context.loopItems instanceof Map
+        ? Array.from(context.loopItems.entries())
+        : []
+
       const subExecutor = new Executor({
         workflow: childWorkflow.serializedState,
         workflowInput: childWorkflowInput,
@@ -157,6 +165,8 @@ export class WorkflowBlockHandler implements BlockHandler {
             executionId: context.executionId,
             blockId: block.id, // The workflow block that initiated this child execution
             deploymentVersionId: (context as any).deploymentVersionId,
+            loopIterations: parentLoopIterations,
+            loopItems: parentLoopItems,
           },
         },
       })

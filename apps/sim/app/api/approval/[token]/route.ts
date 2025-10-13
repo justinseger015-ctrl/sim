@@ -210,10 +210,6 @@ export async function POST(
         }
       }
 
-      if (blockId) {
-        executedBlocksSet.add(blockId)
-      }
-
       context.executedBlocks = executedBlocksSet
       
       // Rebuild activeExecutionPath by finding all downstream blocks from executed blocks
@@ -223,18 +219,10 @@ export async function POST(
       
       // Add all blocks to activeExecutionPath that are reachable from executed blocks
       for (const conn of connections) {
-        // If the source block was executed, add the target to the active path
+        // If the source block was executed, add the downstream target to the active path
         if (executedBlockIds.includes(conn.source) || conn.source === blockId) {
           context.activeExecutionPath.add(conn.target)
         }
-      }
-      
-      // Also add all executed blocks to the active path (they're part of the flow)
-      for (const execBlockId of executedBlockIds) {
-        context.activeExecutionPath.add(execBlockId)
-      }
-      if (blockId) {
-        context.activeExecutionPath.add(blockId)
       }
       
       logger.info('Reconstructed executedBlocks and activeExecutionPath', {
@@ -289,6 +277,26 @@ export async function POST(
           executed: true,
           executionTime,
         })
+
+        const childPausedInfo = metadata.context?.childPausedInfo
+        if (childPausedInfo) {
+          if (Array.isArray(childPausedInfo.loopIterations)) {
+            childPausedInfo.loopIterations.forEach(([loopId, iteration]: [string, number]) => {
+              context.loopIterations.set(loopId, iteration)
+            })
+          }
+
+          if (Array.isArray(childPausedInfo.loopItems)) {
+            childPausedInfo.loopItems.forEach(([key, value]: [string, any]) => {
+              context.loopItems.set(key, value)
+            })
+          }
+
+          ;(context as any).loopStateFromChild = {
+            loopIterations: childPausedInfo.loopIterations || [],
+            loopItems: childPausedInfo.loopItems || [],
+          }
+        }
         
         // DON'T mark as executed here - the resume endpoint will handle it
         // If we add it here, the resume endpoint loads old data without it, causing re-execution

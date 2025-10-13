@@ -194,7 +194,13 @@ export async function POST(
     })
     
     // Get the paused block info early for use in contextExtensions
-    const pausedWaitBlockInfo = (resumeData.executionContext as any).waitBlockInfo || resumeData.metadata?.waitBlockInfo
+    // The blockId is stored directly in metadata, not as part of a waitBlockInfo object
+    const pausedWaitBlockInfo = (resumeData.executionContext as any).waitBlockInfo || (resumeData.metadata?.blockId ? {
+      blockId: resumeData.metadata.blockId,
+      blockName: resumeData.metadata.blockName,
+      pausedAt: resumeData.metadata.pausedAt,
+      description: 'Workflow paused for human approval',
+    } : undefined)
     
     const resumeContext = resumeData.executionContext
 
@@ -212,6 +218,35 @@ export async function POST(
           ? resumeContext.activeExecutionPath
           : []
       )
+    }
+
+    if ((resumeData.metadata as any)?.childPausedInfo) {
+      const childPausedInfo = (resumeData.metadata as any).childPausedInfo
+      if (Array.isArray(childPausedInfo.loopIterations)) {
+        childPausedInfo.loopIterations.forEach(([loopId, iteration]: [string, number]) => {
+          resumeContext.loopIterations.set(loopId, iteration)
+        })
+      }
+      if (Array.isArray(childPausedInfo.loopItems)) {
+        childPausedInfo.loopItems.forEach(([key, value]: [string, any]) => {
+          resumeContext.loopItems.set(key, value)
+        })
+      }
+    }
+
+    if ((resumeContext as any).loopStateFromChild) {
+      const loopStateFromChild = (resumeContext as any).loopStateFromChild
+      if (Array.isArray(loopStateFromChild.loopIterations)) {
+        loopStateFromChild.loopIterations.forEach(([loopId, iteration]: [string, number]) => {
+          resumeContext.loopIterations.set(loopId, iteration)
+        })
+      }
+      if (Array.isArray(loopStateFromChild.loopItems)) {
+        loopStateFromChild.loopItems.forEach(([key, value]: [string, any]) => {
+          resumeContext.loopItems.set(key, value)
+        })
+      }
+      delete (resumeContext as any).loopStateFromChild
     }
 
     const { executor, context } = Executor.createFromPausedState(
@@ -373,10 +408,29 @@ export async function POST(
           const prePauseLogs = resumeData.logs || []
           const allLogsForPause = [...prePauseLogs, ...newLogs]
           
+          const childPausedInfo = (context as any).childPausedInfo
+          if (childPausedInfo) {
+            if (Array.isArray(childPausedInfo.loopIterations)) {
+              childPausedInfo.loopIterations.forEach(([loopId, iteration]: [string, number]) => {
+                context.loopIterations.set(loopId, iteration)
+              })
+            }
+
+            if (Array.isArray(childPausedInfo.loopItems)) {
+              childPausedInfo.loopItems.forEach(([key, value]: [string, any]) => {
+                context.loopItems.set(key, value)
+              })
+            }
+
+            metadataWithoutContext.childPausedInfo = childPausedInfo
+            delete (context as any).childPausedInfo
+          }
+
           const pauseMetadata = {
             ...(resumeData.metadata || {}),
             ...metadataWithoutContext,
             waitBlockInfo,
+            childPausedInfo,
             // Save merged logs so they're available if resumed again
             logs: allLogsForPause,
           }
@@ -490,19 +544,37 @@ export async function POST(
                 const parentContext = parentResumeData.executionContext
                 
                 if (!(parentContext as any).shouldPauseAfterBlock) {
+                  const output = {
+                    success: executionResult.success,
+                    childWorkflowName: childResult.childWorkflowName || childWorkflowData?.name || 'Child Workflow',
+                    childWorkflowId: workflowId,
+                    result: childResult,
+                    error: executionResult.error,
+                    // Include child workflow trace spans
+                    childTraceSpans: traceSpans || [],
+                  }
                   parentContext.blockStates.set(parentInfo.blockId, {
-                    output: {
-                      success: executionResult.success,
-                      childWorkflowName: childResult.childWorkflowName || childWorkflowData?.name || 'Child Workflow',
-                      childWorkflowId: workflowId,
-                      result: childResult,
-                      error: executionResult.error,
-                      // Include child workflow trace spans
-                      childTraceSpans: traceSpans || [],
-                    },
+                    output,
                     executed: true,
                     executionTime: duration,
                   })
+
+                  const childPausedInfo = (context as any).childPausedInfo
+                  if (childPausedInfo) {
+                    if (Array.isArray(childPausedInfo.loopIterations)) {
+                      childPausedInfo.loopIterations.forEach(([loopId, iteration]: [string, number]) => {
+                        context.loopIterations.set(loopId, iteration)
+                      })
+                    }
+
+                    if (Array.isArray(childPausedInfo.loopItems)) {
+                      childPausedInfo.loopItems.forEach(([key, value]: [string, any]) => {
+                        context.loopItems.set(key, value)
+                      })
+                    }
+
+                    delete (context as any).childPausedInfo
+                  }
                 }
                 
                 // Mark the workflow block as executed in the parent context
