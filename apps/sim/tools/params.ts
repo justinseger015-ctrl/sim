@@ -174,8 +174,13 @@ export function getToolParametersConfig(
 
             // If there's a condition, check if it matches the current tool
             if (sb.condition && sb.condition.field === 'operation') {
+              const conditionValue = sb.condition.value
+              const conditionValues = Array.isArray(conditionValue)
+                ? conditionValue
+                : [conditionValue]
+
               // First try exact match with full tool ID
-              if (sb.condition.value === toolId) return true
+              if (conditionValues.includes(toolId)) return true
 
               // Then try extracting operation from tool ID
               // For tools like 'google_calendar_quick_add', extract 'quick_add'
@@ -183,12 +188,12 @@ export function getToolParametersConfig(
               if (parts.length >= 3) {
                 // Join everything after the provider prefix (e.g., 'google_calendar_')
                 const operation = parts.slice(2).join('_')
-                if (sb.condition.value === operation) return true
+                if (conditionValues.includes(operation)) return true
               }
 
               // Fallback to last part only
               const operation = parts[parts.length - 1]
-              return sb.condition.value === operation
+              return conditionValues.includes(operation)
             }
 
             // If no condition, it's a global parameter (like apiKey)

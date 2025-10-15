@@ -449,7 +449,8 @@ export function ToolInput({
   const supportsToolControl = provider ? supportsToolUsageControl(provider) : false
 
   const toolBlocks = getAllBlocks().filter(
-    (block) => block.category === 'tools' && block.type !== 'evaluator'
+    (block) =>
+      (block.category === 'tools' || block.type === 'knowledge') && block.type !== 'evaluator'
   )
 
   // Use preview value when in preview mode, otherwise use store value
