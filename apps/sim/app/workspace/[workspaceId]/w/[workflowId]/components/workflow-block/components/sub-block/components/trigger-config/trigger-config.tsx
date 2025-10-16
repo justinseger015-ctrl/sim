@@ -409,27 +409,29 @@ export function TriggerConfig({
         </Button>
       )}
 
-      {isModalOpen && triggerDef && (() => {
-        // Normalize config for twilio_voice before passing to modal
-        let configForModal = triggerConfig || {}
-        if (triggerDef.provider === 'twilio_voice') {
-          configForModal = normalizeTwilioVoiceConfig(configForModal)
-        }
-        
-        return (
-          <TriggerModal
-            isOpen={isModalOpen}
-            onClose={handleCloseModal}
-            triggerPath={triggerPath || ''}
-            triggerDef={triggerDef}
-            triggerConfig={configForModal}
-            onSave={handleSaveTrigger}
-            onDelete={handleDeleteTrigger}
-            triggerId={triggerId || undefined}
-            blockId={blockId}
-          />
-        )
-      })()}
+      {isModalOpen &&
+        triggerDef &&
+        (() => {
+          // Normalize config for twilio_voice before passing to modal
+          let configForModal = triggerConfig || {}
+          if (triggerDef.provider === 'twilio_voice') {
+            configForModal = normalizeTwilioVoiceConfig(configForModal)
+          }
+
+          return (
+            <TriggerModal
+              isOpen={isModalOpen}
+              onClose={handleCloseModal}
+              triggerPath={triggerPath || ''}
+              triggerDef={triggerDef}
+              triggerConfig={configForModal}
+              onSave={handleSaveTrigger}
+              onDelete={handleDeleteTrigger}
+              triggerId={triggerId || undefined}
+              blockId={blockId}
+            />
+          )
+        })()}
     </div>
   )
 }

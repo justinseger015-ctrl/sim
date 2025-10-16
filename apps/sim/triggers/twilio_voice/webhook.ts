@@ -8,27 +8,37 @@ import type { TriggerConfig } from '../types'
 export function normalizeTwilioVoiceConfig(config: Record<string, any>): Record<string, any> {
   const validFields = ['accountSid', 'authToken', 'twimlResponse']
   const normalized: Record<string, any> = {}
-  
+
   // If config has fields that suggest it's from another provider, clear everything
   const invalidProviderFields = [
-    'email', 'password', 'username', 'apiKey', 'api_key', 
-    'botToken', 'signingSecret', 'verificationToken', 'hmacSecret',
-    'clientId', 'clientSecret', 'credential', 'credentialId'
+    'email',
+    'password',
+    'username',
+    'apiKey',
+    'api_key',
+    'botToken',
+    'signingSecret',
+    'verificationToken',
+    'hmacSecret',
+    'clientId',
+    'clientSecret',
+    'credential',
+    'credentialId',
   ]
-  
-  const hasInvalidFields = invalidProviderFields.some(field => field in config)
+
+  const hasInvalidFields = invalidProviderFields.some((field) => field in config)
   if (hasInvalidFields) {
     // Config is from another provider, return empty to force fresh configuration
     return {}
   }
-  
+
   // Only keep valid Twilio Voice fields
   for (const field of validFields) {
     if (field in config) {
       normalized[field] = config[field]
     }
   }
-  
+
   return normalized
 }
 
@@ -165,4 +175,3 @@ export const twilioVoiceWebhookTrigger: TriggerConfig = {
     },
   },
 }
-
