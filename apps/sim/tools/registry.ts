@@ -177,7 +177,7 @@ import { tavilyExtractTool, tavilySearchTool } from '@/tools/tavily'
 import { telegramMessageTool } from '@/tools/telegram'
 import { thinkingTool } from '@/tools/thinking'
 import { sendSMSTool } from '@/tools/twilio'
-import { getRecordingTool, makeCallTool } from '@/tools/twilio_voice'
+import { getRecordingTool, listCallsTool, makeCallTool } from '@/tools/twilio_voice'
 import { typeformFilesTool, typeformInsightsTool, typeformResponsesTool } from '@/tools/typeform'
 import type { ToolConfig } from '@/tools/types'
 import { visionTool } from '@/tools/vision'
@@ -305,6 +305,7 @@ export const tools: Record<string, ToolConfig> = {
   confluence_update: confluenceUpdateTool,
   twilio_send_sms: sendSMSTool,
   twilio_voice_make_call: makeCallTool,
+  twilio_voice_list_calls: listCallsTool,
   twilio_voice_get_recording: getRecordingTool,
   airtable_create_records: airtableCreateRecordsTool,
   airtable_get_record: airtableGetRecordTool,
